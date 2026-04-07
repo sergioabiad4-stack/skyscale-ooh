@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OOH Proposal Generator — Skyscale</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --brand:   #1a1a2e;
+      --accent:  #e94560;
+      --light:   #f8f9fc;
+      --border:  #dde1ea;
+      --muted:   #6b7280;
+      --radius:  12px;
+      --shadow:  0 4px 24px rgba(0,0,0,.08);
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--light);
+      color: #111827;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem 1rem 4rem;
+    }
+
+    /* ── Header ── */
+    header {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+    header .wordmark {
+      font-size: 2rem;
+      font-weight: 800;
+      letter-spacing: -.5px;
+      color: var(--brand);
+    }
+    header .wordmark span { color: var(--accent); }
+    header .subtitle {
+      font-size: 1rem;
+      color: var(--muted);
+      margin-top: .3rem;
+      letter-spacing: .02em;
+      text-transform: uppercase;
+      font-weight: 500;
+    }
+
+    /* ── Card ── */
+    .card {
+      background: #fff;
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 2rem;
+      width: 100%;
+      max-width: 600px;
+    }
+
+    /* ── Upload zones ── */
+    .upload-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    @media (max-width: 480px) {
+      .upload-grid { grid-template-columns: 1fr; }
+    }
+
+    .upload-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem 1rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .2s, background .2s;
+      position: relative;
+    }
+    .upload-zone:hover, .upload-zone.drag-over {
+      border-color: var(--accent);
+      background: #fff5f7;
+    }
+    .upload-zone.has-file {
+      border-color: #10b981;
+      background: #f0fdf4;
+    }
+    .upload-zone input[type="file"] {
+      position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+    }
+    .upload-icon { font-size: 2rem; margin-bottom: .5rem; display: block; }
+    .upload-label {
+      font-weight: 600;
+      font-size: .85rem;
+      color: var(--brand);
+      display: block;
+      margin-bottom: .25rem;
+    }
+    .upload-hint {
+      font-size: .75rem;
+      color: var(--muted);
+    }
+    .upload-filename {
+      font-size: .75rem;
+      color: #10b981;
+      font-weight: 600;
+      margin-top: .4rem;
+      word-break: break-all;
+    }
+
+    /* ── Placeholder reference ── */
+    .ref-toggle {
+      font-size: .8rem;
+      color: var(--accent);
+      cursor: pointer;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      margin-bottom: 1.5rem;
+      display: inline-block;
+    }
+    .ref-box {
+      background: #f8f9fc;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+      font-size: .78rem;
+      margin-bottom: 1.5rem;
+      display: none;
+    }
+    .ref-box.open { display: block; }
+    .ref-box h4 { font-size: .82rem; margin-bottom: .5rem; color: var(--brand); }
+    .ref-box table { width: 100%; border-collapse: collapse; }
+    .ref-box td {
+      padding: 3px 6px;
+      vertical-align: top;
+    }
+    .ref-box td:first-child {
+      font-family: "Courier New", monospace;
+      font-size: .78rem;
+      color: var(--accent);
+      white-space: nowrap;
+      width: 40%;
+    }
+    .ref-box td:last-child { color: #374151; }
+
+    /* ── Button ── */
+    .btn {
+      display: block;
+      width: 100%;
+      padding: .9rem;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      letter-spacing: .02em;
+      transition: opacity .2s, transform .1s;
+    }
+    .btn:hover:not(:disabled) { opacity: .88; transform: translateY(-1px); }
+    .btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+
+    .btn-download {
+      background: #10b981;
+      margin-top: .75rem;
+      display: none;
+      text-decoration: none;
+      text-align: center;
+    }
+
+    /* ── Status box ── */
+    #status-box {
+      margin-top: 1.5rem;
+      display: none;
+    }
+
+    .progress-bar-track {
+      height: 6px;
+      background: var(--border);
+      border-radius: 99px;
+      overflow: hidden;
+      margin-bottom: .75rem;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 99px;
+      transition: width .4s ease;
+      width: 0%;
+    }
+    .progress-bar-fill.done { background: #10b981; }
+
+    .status-message {
+      font-size: .88rem;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+    }
+    .status-message.error { color: #dc2626; }
+    .status-message.done  { color: #059669; }
+
+    .spinner {
+      width: 16px; height: 16px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Footer ── */
+    footer {
+      margin-top: 3rem;
+      font-size: .75rem;
+      color: #9ca3af;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="wordmark">Sky<span>scale</span></div>
+    <div class="subtitle">OOH Proposal Generator</div>
+  </header>
+
+  <div class="card">
+
+    <div class="upload-grid">
+
+      <!-- Excel upload -->
+      <div class="upload-zone" id="zone-excel">
+        <input type="file" id="input-excel" accept=".xlsx,.xls" />
+        <span class="upload-icon">📊</span>
+        <span class="upload-label">Upload Site Data</span>
+        <span class="upload-hint">Excel (.xlsx / .xls)</span>
+        <div class="upload-filename" id="name-excel"></div>
+      </div>
+
+      <!-- PPTX upload -->
+      <div class="upload-zone" id="zone-pptx">
+        <input type="file" id="input-pptx" accept=".pptx" />
+        <span class="upload-icon">📐</span>
+        <span class="upload-label">Upload Template</span>
+        <span class="upload-hint">PowerPoint (.pptx)</span>
+        <div class="upload-filename" id="name-pptx"></div>
+      </div>
+
+    </div>
+
+    <!-- Placeholder reference -->
+    <span class="ref-toggle" id="ref-toggle">View placeholder tokens for your template</span>
+    <div class="ref-box" id="ref-box">
+      <h4>Add these tokens to your PowerPoint template — the app replaces them automatically:</h4>
+      <table>
+        <tr><td>{SITE_NAME}</td><td>Site Name (from Excel)</td></tr>
+        <tr><td>{TAGLINE}</td><td>AI-generated punchy tagline</td></tr>
+        <tr><td>{LOCATION_DESC}</td><td>AI: 2–3 sentence location description</td></tr>
+        <tr><td>{VISIBILITY_DESC}</td><td>AI: viewing angles & sightlines</td></tr>
+        <tr><td>{AUDIENCE_DESC}</td><td>AI: audience profile & volume</td></tr>
+        <tr><td>{MARKET}</td><td>Market / city</td></tr>
+        <tr><td>{LOCATION}</td><td>Location address</td></tr>
+        <tr><td>{FORMAT}</td><td>Format (e.g. Billboard)</td></tr>
+        <tr><td>{SIZE}</td><td>Physical size</td></tr>
+        <tr><td>{UNITS}</td><td>Units / Faces</td></tr>
+        <tr><td>{FREQUENCY}</td><td>Spot Duration + SOV/Loop</td></tr>
+        <tr><td>{TRAFFIC}</td><td>Daily impacts (formatted)</td></tr>
+        <tr><td>{LANDMARK_1}</td><td>Nearby landmark 1 (AI)</td></tr>
+        <tr><td>{LANDMARK_2}</td><td>Nearby landmark 2 (AI)</td></tr>
+        <tr><td>{LANDMARK_3}</td><td>Nearby landmark 3 (AI)</td></tr>
+      </table>
+    </div>
+
+    <button class="btn" id="btn-generate" disabled>Generate Proposal</button>
+
+    <a class="btn btn-download" id="btn-download" href="#" download="OOH_Proposal.pptx">
+      Download Proposal
+    </a>
+
+    <!-- Status area -->
+    <div id="status-box">
+      <div class="progress-bar-track">
+        <div class="progress-bar-fill" id="progress-fill"></div>
+      </div>
+      <div class="status-message" id="status-msg">
+        <div class="spinner" id="spinner"></div>
+        <span id="status-text">Initialising…</span>
+      </div>
+    </div>
+
+  </div>
+
+  <footer>Skyscale &mdash; Internal tools &mdash; Powered by Claude AI</footer>
+
+  <script>
+    const inputExcel = document.getElementById('input-excel');
+    const inputPptx  = document.getElementById('input-pptx');
+    const zoneExcel  = document.getElementById('zone-excel');
+    const zonePptx   = document.getElementById('zone-pptx');
+    const nameExcel  = document.getElementById('name-excel');
+    const namePptx   = document.getElementById('name-pptx');
+    const btnGen     = document.getElementById('btn-generate');
+    const btnDl      = document.getElementById('btn-download');
+    const statusBox  = document.getElementById('status-box');
+    const progressFill = document.getElementById('progress-fill');
+    const statusMsg  = document.getElementById('status-msg');
+    const statusText = document.getElementById('status-text');
+    const spinner    = document.getElementById('spinner');
+    const refToggle  = document.getElementById('ref-toggle');
+    const refBox     = document.getElementById('ref-box');
+
+    // Placeholder reference toggle
+    refToggle.addEventListener('click', () => {
+      refBox.classList.toggle('open');
+      refToggle.textContent = refBox.classList.contains('open')
+        ? 'Hide placeholder tokens'
+        : 'View placeholder tokens for your template';
+    });
+
+    // File selection handling
+    function handleFileSelect(input, zone, nameEl, type) {
+      input.addEventListener('change', () => {
+        if (input.files[0]) {
+          zone.classList.add('has-file');
+          nameEl.textContent = input.files[0].name;
+        } else {
+          zone.classList.remove('has-file');
+          nameEl.textContent = '';
+        }
+        checkReady();
+      });
+    }
+
+    handleFileSelect(inputExcel, zoneExcel, nameExcel, 'excel');
+    handleFileSelect(inputPptx,  zonePptx,  namePptx,  'pptx');
+
+    // Drag-and-drop
+    [zoneExcel, zonePptx].forEach(zone => {
+      zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+      zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+      zone.addEventListener('drop', e => {
+        e.preventDefault();
+        zone.classList.remove('drag-over');
+        const dt = e.dataTransfer;
+        const input = zone.querySelector('input[type="file"]');
+        if (dt.files[0]) {
+          input.files = dt.files;
+          input.dispatchEvent(new Event('change'));
+        }
+      });
+    });
+
+    function checkReady() {
+      btnGen.disabled = !(inputExcel.files[0] && inputPptx.files[0]);
+    }
+
+    // Poll status
+    let pollTimer = null;
+
+    function setStatus(msg, type = 'processing', pct = 0) {
+      statusText.textContent = msg;
+      progressFill.style.width = pct + '%';
+      statusMsg.className = 'status-message ' + type;
+
+      if (type === 'done') {
+        progressFill.classList.add('done');
+        spinner.style.display = 'none';
+      } else if (type === 'error') {
+        spinner.style.display = 'none';
+        progressFill.classList.remove('done');
+      } else {
+        spinner.style.display = 'block';
+        progressFill.classList.remove('done');
+      }
+    }
+
+    function pollStatus(jobId) {
+      fetch('/api/status/' + jobId)
+        .then(r => r.json())
+        .then(data => {
+          setStatus(data.message, data.status, data.progress);
+
+          if (data.status === 'done') {
+            btnDl.href = '/api/download/' + jobId;
+            btnDl.style.display = 'block';
+            btnGen.disabled = false;
+          } else if (data.status === 'error') {
+            btnGen.disabled = false;
+          } else {
+            pollTimer = setTimeout(() => pollStatus(jobId), 1500);
+          }
+        })
+        .catch(() => {
+          pollTimer = setTimeout(() => pollStatus(jobId), 2000);
+        });
+    }
+
+    // Generate
+    btnGen.addEventListener('click', () => {
+      if (!inputExcel.files[0] || !inputPptx.files[0]) return;
+
+      // Reset UI
+      clearTimeout(pollTimer);
+      btnDl.style.display = 'none';
+      btnDl.href = '#';
+      progressFill.style.width = '0%';
+      progressFill.classList.remove('done');
+      spinner.style.display = 'block';
+      statusBox.style.display = 'block';
+      btnGen.disabled = true;
+      setStatus('Uploading files…', 'processing', 2);
+
+      const form = new FormData();
+      form.append('excel', inputExcel.files[0]);
+      form.append('template', inputPptx.files[0]);
+
+      fetch('/api/generate', { method: 'POST', body: form })
+        .then(r => r.json())
+        .then(data => {
+          if (data.error) {
+            setStatus('Error: ' + data.error, 'error', 0);
+            btnGen.disabled = false;
+            return;
+          }
+          pollStatus(data.job_id);
+        })
+        .catch(err => {
+          setStatus('Upload failed. Is the server running?', 'error', 0);
+          btnGen.disabled = false;
+        });
+    });
+  </script>
+</body>
+</html>
