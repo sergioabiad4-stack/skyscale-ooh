@@ -264,23 +264,11 @@ def generate_site_content(site: dict, client: anthropic.Anthropic) -> dict:
     size = site.get("Size", "")
     is_mobile = str(location).strip().lower() == "various"
 
-    # Try real landmark lookup first (OpenStreetMap)
-    real_landmarks: list | None = None
-    if not is_mobile:
-        real_landmarks = get_real_landmarks(location, market)
+    # For mobile/bus routes use the city centre as the lookup address
+    lookup_address = market if is_mobile else location
+    real_landmarks: list | None = get_real_landmarks(lookup_address, market)
 
-    if is_mobile:
-        landmark_instruction = (
-            "Since this is a bus/transit route covering various locations across the city, "
-            "provide 3 short lines about city-wide coverage, reach, and route highlights "
-            "instead of specific nearby landmarks. Format: plain sentence, no distances."
-        )
-        landmark_format = (
-            '"landmark_1": "City-wide coverage line 1",\n'
-            '  "landmark_2": "City-wide coverage line 2",\n'
-            '  "landmark_3": "City-wide coverage line 3"'
-        )
-    elif real_landmarks:
+    if real_landmarks:
         # We already have real landmarks — tell Claude not to generate them
         landmark_instruction = (
             "Real nearby landmarks have already been sourced from a map service. "
