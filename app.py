@@ -2,10 +2,13 @@ import os
 import uuid
 import copy
 import json
+import math
 import threading
 import traceback
 import re
+import time
 from pathlib import Path
+import requests
 
 from flask import Flask, request, jsonify, send_file, render_template
 import pandas as pd
@@ -108,6 +111,88 @@ def replace_text_in_slide(slide, replacements: dict, ordered: dict = None):
 
 
 # ---------------------------------------------------------------------------
+# Real landmark lookup via OpenStreetMap (no API key required)
+# ---------------------------------------------------------------------------
+
+OSM_HEADERS = {"User-Agent": "Skyscale-OOH-Generator/1.0 (contact@skyscale.com)"}
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    R = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2
+    return R * 2 * math.asin(math.sqrt(a))
+
+
+def get_real_landmarks(location: str, city: str, n: int = 3) -> list[str] | None:
+    """
+    Geocode the address then query OpenStreetMap for nearby POIs.
+    Returns a list of formatted strings like "Eiffel Tower – 0.4km"
+    or None if the lookup fails (caller falls back to Claude).
+    """
+    try:
+        # 1. Geocode
+        geo_resp = requests.get(
+            "https://nominatim.openstreetmap.org/search",
+            params={"q": f"{location}, {city}", "format": "json", "limit": 1},
+            headers=OSM_HEADERS,
+            timeout=8,
+        )
+        geo_data = geo_resp.json()
+        if not geo_data:
+            return None
+        lat = float(geo_data[0]["lat"])
+        lon = float(geo_data[0]["lon"])
+
+        # Nominatim rate-limit: 1 req/s
+        time.sleep(1.1)
+
+        # 2. Find nearby named POIs via Overpass API
+        overpass_query = f"""
+[out:json][timeout:12];
+(
+  node["name"]["tourism"](around:600,{lat},{lon});
+  node["name"]["amenity"~"^(restaurant|cafe|bar|hotel|bank|museum|theatre|cinema|hospital|university|library|marketplace|place_of_worship)$"](around:600,{lat},{lon});
+  node["name"]["shop"~"^(mall|department_store|supermarket)$"](around:600,{lat},{lon});
+  node["name"]["historic"](around:600,{lat},{lon});
+  way["name"]["building"~"^(commercial|retail|hotel|civic)$"](around:600,{lat},{lon});
+);
+out center 20;
+"""
+        op_resp = requests.post(
+            "https://overpass-api.de/api/interpreter",
+            data={"data": overpass_query},
+            headers=OSM_HEADERS,
+            timeout=15,
+        )
+        elements = op_resp.json().get("elements", [])
+
+        # 3. Deduplicate, sort by distance, take top n
+        seen: set = set()
+        ranked: list = []
+        for el in elements:
+            name = el.get("tags", {}).get("name", "").strip()
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            el_lat = el.get("lat") or el.get("center", {}).get("lat", lat)
+            el_lon = el.get("lon") or el.get("center", {}).get("lon", lon)
+            dist = _haversine_km(lat, lon, float(el_lat), float(el_lon))
+            ranked.append((dist, name))
+
+        ranked.sort(key=lambda x: x[0])
+        results = []
+        for dist, name in ranked[:n]:
+            km = round(dist, 1) if dist >= 0.1 else 0.1
+            results.append(f"{name} \u2013 {km}km")   # en-dash to match template style
+
+        return results if len(results) >= n else None
+
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
 # AI content generation
 # ---------------------------------------------------------------------------
 
@@ -124,26 +209,44 @@ def generate_site_content(site: dict, client: anthropic.Anthropic) -> dict:
     size = site.get("Size", "")
     is_mobile = str(location).strip().lower() == "various"
 
+    # Try real landmark lookup first (OpenStreetMap)
+    real_landmarks: list | None = None
+    if not is_mobile:
+        real_landmarks = get_real_landmarks(location, market)
+
     if is_mobile:
         landmark_instruction = (
             "Since this is a bus/transit route covering various locations across the city, "
             "provide 3 short lines about city-wide coverage, reach, and route highlights "
-            "instead of specific nearby landmarks."
+            "instead of specific nearby landmarks. Format: plain sentence, no distances."
         )
         landmark_format = (
             '"landmark_1": "City-wide coverage line 1",\n'
             '  "landmark_2": "City-wide coverage line 2",\n'
             '  "landmark_3": "City-wide coverage line 3"'
         )
-    else:
+    elif real_landmarks:
+        # We already have real landmarks — tell Claude not to generate them
         landmark_instruction = (
-            "Provide 3 real nearby landmarks for this address with approximate walking distances. "
-            "Use your knowledge of the city to name specific, recognisable places."
+            "Real nearby landmarks have already been sourced from a map service. "
+            "For landmark_1/2/3 return exactly these strings unchanged:\n"
+            + "\n".join(f"  {i+1}. {l}" for i, l in enumerate(real_landmarks))
         )
         landmark_format = (
-            '"landmark_1": "Landmark Name — X min walk",\n'
-            '  "landmark_2": "Landmark Name — X min walk",\n'
-            '  "landmark_3": "Landmark Name — X min walk"'
+            f'"landmark_1": "{real_landmarks[0]}",\n'
+            f'  "landmark_2": "{real_landmarks[1]}",\n'
+            f'  "landmark_3": "{real_landmarks[2]}"'
+        )
+    else:
+        landmark_instruction = (
+            "Real map lookup was unavailable. Use your knowledge of this city to name "
+            "3 specific, well-known nearby landmarks with approximate distances in km. "
+            'Format each as "Landmark Name – 0.Xkm".'
+        )
+        landmark_format = (
+            '"landmark_1": "Landmark Name \u2013 0.Xkm",\n'
+            '  "landmark_2": "Landmark Name \u2013 0.Xkm",\n'
+            '  "landmark_3": "Landmark Name \u2013 0.Xkm"'
         )
 
     prompt = f"""You are writing punchy, professional copy for an OOH (Out-of-Home) advertising proposal.
