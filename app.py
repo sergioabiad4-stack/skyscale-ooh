@@ -59,26 +59,48 @@ def clone_slide(prs: Presentation, source_index: int = 0):
     return new_slide
 
 
-def replace_text_in_slide(slide, replacements: dict):
+def replace_text_in_slide(slide, replacements: dict, ordered: dict = None):
     """
     Replace placeholder tokens in every text frame on a slide.
-    Handles the case where a token is split across multiple runs by
-    working at the paragraph level.
+
+    replacements  – {old: new} for unique tokens
+    ordered       – {old: [val1, val2, val3]} for tokens that appear
+                    multiple times; replaced in document order (top→bottom)
     """
+    order_counts = {k: 0 for k in (ordered or {})}
+
     for shape in slide.shapes:
         if not shape.has_text_frame:
             continue
         for para in shape.text_frame.paragraphs:
-            # Reconstruct the paragraph's full text
             full_text = "".join(run.text for run in para.runs)
-            if not any(k in full_text for k in replacements):
+            if not full_text.strip():
                 continue
-            # Apply all replacements
+
             modified = full_text
+            changed = False
+
+            # Unique replacements
             for placeholder, value in replacements.items():
-                modified = modified.replace(placeholder, str(value) if value is not None else "")
-            # Write back: put everything in the first run, clear the rest
-            if para.runs:
+                if placeholder in modified:
+                    modified = modified.replace(
+                        placeholder, str(value) if value is not None else ""
+                    )
+                    changed = True
+
+            # Ordered replacements (same token appears N times)
+            for placeholder, values in (ordered or {}).items():
+                if placeholder in modified:
+                    idx = order_counts[placeholder]
+                    if idx < len(values):
+                        modified = modified.replace(
+                            placeholder,
+                            str(values[idx]) if values[idx] is not None else "",
+                        )
+                        order_counts[placeholder] += 1
+                        changed = True
+
+            if changed and para.runs:
                 para.runs[0].text = modified
                 for run in para.runs[1:]:
                     run.text = ""
@@ -231,23 +253,66 @@ def process_job(job_id: str, excel_path: Path, pptx_path: Path):
             site_dict = row.to_dict()
             ai = generate_site_content(site_dict, client)
 
+            # --- Values shorthand ---
+            size     = str(row.get("Size", "")).strip()
+            location = str(row.get("Location", "")).strip()
+            units    = str(row.get("Units/Faces", "")).strip()
+            fmt      = str(row.get("Format", "")).strip()
+            market   = str(row.get("Market", "")).strip()
+
             # --- Build replacement map ---
+            # Matches the exact placeholder strings in the "xyz format" template.
+            # Also supports {TOKEN} style for custom templates.
             replacements = {
+                # ── Title ──────────────────────────────────────────────────
+                "Site Name":        site_name,
+                "Headline":         ai.get("tagline", ""),
+                # ── Additional Information boxes ───────────────────────────
+                "Size: xyz":        f"Size: {size}",
+                "Format: xyz":      f"Format: {fmt}",
+                "Location: xyz":    f"Location: {location}",
+                "Frequency: xyz":   f"Frequency: {frequency}",
+                "Units: xyz":       f"Units: {units}",
+                "Traffic: xyz":     f"Traffic: {traffic}",
+                # ── {TOKEN} style (for custom templates) ──────────────────
                 "{SITE_NAME}":      site_name,
                 "{TAGLINE}":        ai.get("tagline", ""),
                 "{LOCATION_DESC}":  ai.get("location_desc", ""),
                 "{VISIBILITY_DESC}": ai.get("visibility_desc", ""),
                 "{AUDIENCE_DESC}":  ai.get("audience_desc", ""),
-                "{SIZE}":           str(row.get("Size", "")).strip(),
-                "{LOCATION}":       str(row.get("Location", "")).strip(),
-                "{UNITS}":          str(row.get("Units/Faces", "")).strip(),
-                "{FORMAT}":         str(row.get("Format", "")).strip(),
+                "{SIZE}":           size,
+                "{LOCATION}":       location,
+                "{UNITS}":          units,
+                "{FORMAT}":         fmt,
                 "{FREQUENCY}":      frequency,
                 "{TRAFFIC}":        traffic,
                 "{LANDMARK_1}":     ai.get("landmark_1", ""),
                 "{LANDMARK_2}":     ai.get("landmark_2", ""),
                 "{LANDMARK_3}":     ai.get("landmark_3", ""),
-                "{MARKET}":         str(row.get("Market", "")).strip(),
+                "{MARKET}":         market,
+            }
+
+            # --- Ordered replacements (same token appears multiple times) ---
+            # "Text"        → Location desc, Visibility desc, Audience desc (top→bottom)
+            # "Xyz \u20130.5km" → Landmark 1, 2, 3  (en-dash variant)
+            ordered = {
+                "Text": [
+                    ai.get("location_desc", ""),
+                    ai.get("visibility_desc", ""),
+                    ai.get("audience_desc", ""),
+                ],
+                # en-dash "–" (U+2013) as used in the template
+                "Xyz \u20130.5km": [
+                    ai.get("landmark_1", ""),
+                    ai.get("landmark_2", ""),
+                    ai.get("landmark_3", ""),
+                ],
+                # hyphen fallback just in case
+                "Xyz -0.5km": [
+                    ai.get("landmark_1", ""),
+                    ai.get("landmark_2", ""),
+                    ai.get("landmark_3", ""),
+                ],
             }
 
             # --- Select / create the slide ---
@@ -256,7 +321,7 @@ def process_job(job_id: str, excel_path: Path, pptx_path: Path):
             else:
                 slide = clone_slide(prs, source_index=0)
 
-            replace_text_in_slide(slide, replacements)
+            replace_text_in_slide(slide, replacements, ordered)
 
         # ── 5. Save output ─────────────────────────────────────────────────
         update("processing", "Saving output file…", 95)
