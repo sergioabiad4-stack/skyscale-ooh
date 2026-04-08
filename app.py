@@ -11,6 +11,7 @@ from flask import Flask, request, jsonify, send_file, render_template
 import pandas as pd
 from pptx import Presentation
 from pptx.oxml.ns import qn
+from lxml import etree
 import anthropic
 
 # ---------------------------------------------------------------------------
@@ -219,11 +220,12 @@ def process_job(job_id: str, excel_path: Path, pptx_path: Path):
         if not prs.slides:
             raise ValueError("The PowerPoint template has no slides.")
 
-        # Snapshot the original template slide XML BEFORE any modifications.
-        # clone_slide always clones from this frozen copy so every slide
-        # starts from the blank template — not from a previously-filled slide.
-        template_spTree = copy.deepcopy(prs.slides[0].shapes._spTree)
-        template_layout = prs.slides[0].slide_layout
+        # Snapshot the original template slide BEFORE any modifications.
+        template_slide  = prs.slides[0]
+        template_layout = template_slide.slide_layout
+        template_spTree = copy.deepcopy(template_slide.shapes._spTree)
+        # Also snapshot the serialised spTree XML so we can do rId remapping
+        template_spTree_xml = etree.tostring(template_spTree, encoding="unicode")
 
         # ── 3. Set up Anthropic client ─────────────────────────────────────
         api_key = os.environ.get("ANTHROPIC_API_KEY", "")
@@ -325,12 +327,32 @@ def process_job(job_id: str, excel_path: Path, pptx_path: Path):
             if idx == 0:
                 slide = prs.slides[0]
             else:
-                # Add a fresh slide and stamp the ORIGINAL template XML onto it
+                # Add a fresh slide using the template layout
                 slide = prs.slides.add_slide(template_layout)
+
+                # Copy image/media relationships from template slide → new slide
+                # and build an rId remapping table
+                rId_map = {}
+                for rel_id, rel in template_slide.part.rels.items():
+                    if "image" in rel.reltype or "media" in rel.reltype:
+                        try:
+                            new_rId = slide.part.relate_to(rel.target_part, rel.reltype)
+                            if new_rId != rel_id:
+                                rId_map[rel_id] = new_rId
+                        except Exception:
+                            pass
+
+                # Start from the serialised template XML and apply rId remapping
+                xml = template_spTree_xml
+                for old_id, new_id in rId_map.items():
+                    xml = xml.replace(f'r:embed="{old_id}"', f'r:embed="{new_id}"')
+                    xml = xml.replace(f'r:link="{old_id}"',  f'r:link="{new_id}"')
+
+                # Parse the updated XML and attach to the new slide's spTree
                 new_tree = slide.shapes._spTree
                 for child in list(new_tree):
                     new_tree.remove(child)
-                for child in template_spTree:
+                for child in etree.fromstring(xml):
                     new_tree.append(copy.deepcopy(child))
 
             replace_text_in_slide(slide, replacements, ordered)
