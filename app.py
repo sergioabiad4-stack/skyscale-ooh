@@ -111,7 +111,7 @@ def replace_text_in_slide(slide, replacements: dict, ordered: dict = None):
 
 
 # ---------------------------------------------------------------------------
-# Real landmark lookup via OpenStreetMap (no API key required)
+# Real landmark lookup — Google Maps (preferred) with OSM fallback
 # ---------------------------------------------------------------------------
 
 OSM_HEADERS = {"User-Agent": "Skyscale-OOH-Generator/1.0 (contact@skyscale.com)"}
@@ -124,14 +124,60 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return R * 2 * math.asin(math.sqrt(a))
 
 
-def get_real_landmarks(location: str, city: str, n: int = 3) -> list[str] | None:
-    """
-    Geocode the address then query OpenStreetMap for nearby POIs.
-    Returns a list of formatted strings like "Eiffel Tower – 0.4km"
-    or None if the lookup fails (caller falls back to Claude).
-    """
+def _get_landmarks_google(location: str, city: str, n: int = 3):
+    """Use Google Maps Geocoding + Places API to find nearby landmarks."""
+    api_key = os.environ.get("GOOGLE_MAPS_API_KEY", "")
+    if not api_key:
+        return None
     try:
         # 1. Geocode
+        geo = requests.get(
+            "https://maps.googleapis.com/maps/api/geocode/json",
+            params={"address": f"{location}, {city}", "key": api_key},
+            timeout=8,
+        ).json()
+        if geo.get("status") != "OK":
+            return None
+        loc = geo["results"][0]["geometry"]["location"]
+        lat, lng = loc["lat"], loc["lng"]
+
+        # 2. Nearby Search — prioritise landmark/point_of_interest types
+        places = requests.get(
+            "https://maps.googleapis.com/maps/api/place/nearbysearch/json",
+            params={
+                "location": f"{lat},{lng}",
+                "radius": 600,
+                "type": "point_of_interest",
+                "key": api_key,
+            },
+            timeout=10,
+        ).json()
+
+        results = []
+        seen: set = set()
+        for p in places.get("results", []):
+            name = p.get("name", "").strip()
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            p_lat = p["geometry"]["location"]["lat"]
+            p_lng = p["geometry"]["location"]["lng"]
+            dist = _haversine_km(lat, lng, p_lat, p_lng)
+            results.append((dist, name))
+
+        results.sort(key=lambda x: x[0])
+        return [
+            f"{name} \u2013 {round(d, 1) if d >= 0.1 else 0.1}km"
+            for d, name in results[:n]
+        ] or None
+
+    except Exception:
+        return None
+
+
+def _get_landmarks_osm(location: str, city: str, n: int = 3):
+    """Fallback: OpenStreetMap / Overpass (no API key needed)."""
+    try:
         geo_resp = requests.get(
             "https://nominatim.openstreetmap.org/search",
             params={"q": f"{location}, {city}", "format": "json", "limit": 1},
@@ -143,31 +189,25 @@ def get_real_landmarks(location: str, city: str, n: int = 3) -> list[str] | None
             return None
         lat = float(geo_data[0]["lat"])
         lon = float(geo_data[0]["lon"])
+        time.sleep(1.1)  # Nominatim rate-limit
 
-        # Nominatim rate-limit: 1 req/s
-        time.sleep(1.1)
-
-        # 2. Find nearby named POIs via Overpass API
         overpass_query = f"""
 [out:json][timeout:12];
 (
   node["name"]["tourism"](around:600,{lat},{lon});
-  node["name"]["amenity"~"^(restaurant|cafe|bar|hotel|bank|museum|theatre|cinema|hospital|university|library|marketplace|place_of_worship)$"](around:600,{lat},{lon});
-  node["name"]["shop"~"^(mall|department_store|supermarket)$"](around:600,{lat},{lon});
+  node["name"]["amenity"~"^(restaurant|cafe|hotel|bank|museum|theatre|cinema|hospital|university|library|historic)$"](around:600,{lat},{lon});
   node["name"]["historic"](around:600,{lat},{lon});
-  way["name"]["building"~"^(commercial|retail|hotel|civic)$"](around:600,{lat},{lon});
+  node["name"]["shop"~"^(mall|department_store|supermarket)$"](around:600,{lat},{lon});
 );
 out center 20;
 """
-        op_resp = requests.post(
+        elements = requests.post(
             "https://overpass-api.de/api/interpreter",
             data={"data": overpass_query},
             headers=OSM_HEADERS,
             timeout=15,
-        )
-        elements = op_resp.json().get("elements", [])
+        ).json().get("elements", [])
 
-        # 3. Deduplicate, sort by distance, take top n
         seen: set = set()
         ranked: list = []
         for el in elements:
@@ -177,19 +217,29 @@ out center 20;
             seen.add(name)
             el_lat = el.get("lat") or el.get("center", {}).get("lat", lat)
             el_lon = el.get("lon") or el.get("center", {}).get("lon", lon)
-            dist = _haversine_km(lat, lon, float(el_lat), float(el_lon))
-            ranked.append((dist, name))
+            ranked.append((_haversine_km(lat, lon, float(el_lat), float(el_lon)), name))
 
         ranked.sort(key=lambda x: x[0])
         results = []
         for dist, name in ranked[:n]:
             km = round(dist, 1) if dist >= 0.1 else 0.1
-            results.append(f"{name} \u2013 {km}km")   # en-dash to match template style
+            results.append(f"{name} \u2013 {km}km")
 
         return results if len(results) >= n else None
 
     except Exception:
         return None
+
+
+def get_real_landmarks(location: str, city: str, n: int = 3):
+    """
+    Try Google Maps first (if GOOGLE_MAPS_API_KEY is set), then fall back
+    to OpenStreetMap. Returns list of 'Name – Xkm' strings or None.
+    """
+    result = _get_landmarks_google(location, city, n)
+    if result and len(result) >= n:
+        return result
+    return _get_landmarks_osm(location, city, n)
 
 
 # ---------------------------------------------------------------------------
