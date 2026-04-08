@@ -146,7 +146,7 @@ def _get_landmarks_google(location: str, city: str, n: int = 3):
             "https://maps.googleapis.com/maps/api/place/nearbysearch/json",
             params={
                 "location": f"{lat},{lng}",
-                "radius": 600,
+                "radius": 5000,
                 "type": "point_of_interest",
                 "key": api_key,
             },
@@ -166,9 +166,10 @@ def _get_landmarks_google(location: str, city: str, n: int = 3):
             results.append((dist, name))
 
         results.sort(key=lambda x: x[0])
+        filtered = [(d, name) for d, name in results if d <= 5.0][:n]
         return [
             f"{name} \u2013 {round(d, 1) if d >= 0.1 else 0.1}km"
-            for d, name in results[:n]
+            for d, name in filtered
         ] or None
 
     except Exception:
@@ -194,10 +195,10 @@ def _get_landmarks_osm(location: str, city: str, n: int = 3):
         overpass_query = f"""
 [out:json][timeout:12];
 (
-  node["name"]["tourism"](around:600,{lat},{lon});
-  node["name"]["amenity"~"^(restaurant|cafe|hotel|bank|museum|theatre|cinema|hospital|university|library|historic)$"](around:600,{lat},{lon});
-  node["name"]["historic"](around:600,{lat},{lon});
-  node["name"]["shop"~"^(mall|department_store|supermarket)$"](around:600,{lat},{lon});
+  node["name"]["tourism"](around:5000,{lat},{lon});
+  node["name"]["amenity"~"^(restaurant|cafe|hotel|bank|museum|theatre|cinema|hospital|university|library|historic)$"](around:5000,{lat},{lon});
+  node["name"]["historic"](around:5000,{lat},{lon});
+  node["name"]["shop"~"^(mall|department_store|supermarket)$"](around:5000,{lat},{lon});
 );
 out center 20;
 """
@@ -221,9 +222,13 @@ out center 20;
 
         ranked.sort(key=lambda x: x[0])
         results = []
-        for dist, name in ranked[:n]:
+        for dist, name in ranked:
+            if dist > 5.0:          # hard cap at 5km
+                break
             km = round(dist, 1) if dist >= 0.1 else 0.1
             results.append(f"{name} \u2013 {km}km")
+            if len(results) == n:
+                break
 
         return results if len(results) >= n else None
 
@@ -290,8 +295,8 @@ def generate_site_content(site: dict, client: anthropic.Anthropic) -> dict:
     else:
         landmark_instruction = (
             "Real map lookup was unavailable. Use your knowledge of this city to name "
-            "3 specific, well-known nearby landmarks with approximate distances in km. "
-            'Format each as "Landmark Name – 0.Xkm".'
+            "3 specific, well-known nearby landmarks within 5km. "
+            'Format each as "Landmark Name \u2013 0.Xkm" (max 5km).'
         )
         landmark_format = (
             '"landmark_1": "Landmark Name \u2013 0.Xkm",\n'
