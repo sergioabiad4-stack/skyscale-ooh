@@ -453,27 +453,22 @@ def process_job(job_id: str, excel_path: Path, pptx_path: Path):
                 "{MARKET}":         market,
             }
 
+            lm = [ai.get("landmark_1", ""), ai.get("landmark_2", ""), ai.get("landmark_3", "")]
+
             # --- Ordered replacements (same token appears multiple times) ---
-            # "Text"        → Location desc, Visibility desc, Audience desc (top→bottom)
-            # "Xyz \u20130.5km" → Landmark 1, 2, 3  (en-dash variant)
+            # Exact paragraph texts confirmed from template XML:
+            #   descriptions → "Text"  (×3)
+            #   landmarks    → "Xyz - 0.5km"  (×3, plain hyphen with spaces)
             ordered = {
                 "Text": [
                     ai.get("location_desc", ""),
                     ai.get("visibility_desc", ""),
                     ai.get("audience_desc", ""),
                 ],
-                # en-dash "–" (U+2013) as used in the template
-                "Xyz \u20130.5km": [
-                    ai.get("landmark_1", ""),
-                    ai.get("landmark_2", ""),
-                    ai.get("landmark_3", ""),
-                ],
-                # hyphen fallback just in case
-                "Xyz -0.5km": [
-                    ai.get("landmark_1", ""),
-                    ai.get("landmark_2", ""),
-                    ai.get("landmark_3", ""),
-                ],
+                "Xyz - 0.5km": lm,          # exact match (confirmed from template XML)
+                "Xyz \u2013 0.5km": lm,     # en-dash with spaces fallback
+                "Xyz \u20130.5km": lm,      # en-dash no trailing space fallback
+                "Xyz -0.5km": lm,           # hyphen no leading space fallback
             }
 
             # --- Select / create the slide ---
