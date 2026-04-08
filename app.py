@@ -219,6 +219,12 @@ def process_job(job_id: str, excel_path: Path, pptx_path: Path):
         if not prs.slides:
             raise ValueError("The PowerPoint template has no slides.")
 
+        # Snapshot the original template slide XML BEFORE any modifications.
+        # clone_slide always clones from this frozen copy so every slide
+        # starts from the blank template — not from a previously-filled slide.
+        template_spTree = copy.deepcopy(prs.slides[0].shapes._spTree)
+        template_layout = prs.slides[0].slide_layout
+
         # ── 3. Set up Anthropic client ─────────────────────────────────────
         api_key = os.environ.get("ANTHROPIC_API_KEY", "")
         if not api_key:
@@ -319,7 +325,13 @@ def process_job(job_id: str, excel_path: Path, pptx_path: Path):
             if idx == 0:
                 slide = prs.slides[0]
             else:
-                slide = clone_slide(prs, source_index=0)
+                # Add a fresh slide and stamp the ORIGINAL template XML onto it
+                slide = prs.slides.add_slide(template_layout)
+                new_tree = slide.shapes._spTree
+                for child in list(new_tree):
+                    new_tree.remove(child)
+                for child in template_spTree:
+                    new_tree.append(copy.deepcopy(child))
 
             replace_text_in_slide(slide, replacements, ordered)
 
