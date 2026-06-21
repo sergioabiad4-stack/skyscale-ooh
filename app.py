@@ -29,7 +29,8 @@ OUTPUT_FOLDER = BASE_DIR / "outputs"
 UPLOAD_FOLDER.mkdir(exist_ok=True)
 OUTPUT_FOLDER.mkdir(exist_ok=True)
 
-# In-memory job registry  {job_id: {"status": ..., "message": ..., "progress": ..., "output": ...}}
+# In-memory job registry
+# {job_id: {"status": ..., "message": ..., "progress": ..., "plan": ..., "pptx_path": ..., "output": ...}}
 jobs: dict = {}
 jobs_lock = threading.Lock()
 
@@ -43,16 +44,13 @@ def clone_slide(prs: Presentation, source_index: int = 0):
     source = prs.slides[source_index]
     new_slide = prs.slides.add_slide(source.slide_layout)
 
-    # Clear auto-generated placeholder shapes from the new slide
     sp_tree = new_slide.shapes._spTree
     for child in list(sp_tree):
         sp_tree.remove(child)
 
-    # Deep-copy every shape from the source slide
     for child in source.shapes._spTree:
         sp_tree.append(copy.deepcopy(child))
 
-    # Copy any image / media relationships that live directly on the slide
     for rel in source.part.rels.values():
         if "image" in rel.reltype:
             try:
@@ -84,7 +82,6 @@ def replace_text_in_slide(slide, replacements: dict, ordered: dict = None):
             modified = full_text
             changed = False
 
-            # Unique replacements
             for placeholder, value in replacements.items():
                 if placeholder in modified:
                     modified = modified.replace(
@@ -92,7 +89,6 @@ def replace_text_in_slide(slide, replacements: dict, ordered: dict = None):
                     )
                     changed = True
 
-            # Ordered replacements (same token appears N times)
             for placeholder, values in (ordered or {}).items():
                 if placeholder in modified:
                     idx = order_counts[placeholder]
@@ -120,17 +116,17 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     R = 6371.0
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
-    a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2
+    a = (math.sin(dlat / 2) ** 2
+         + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2))
+         * math.sin(dlon / 2) ** 2)
     return R * 2 * math.asin(math.sqrt(a))
 
 
 def _get_landmarks_google(location: str, city: str, n: int = 3):
-    """Use Google Maps Geocoding + Places API to find nearby landmarks."""
     api_key = os.environ.get("GOOGLE_MAPS_API_KEY", "")
     if not api_key:
         return None
     try:
-        # 1. Geocode
         geo = requests.get(
             "https://maps.googleapis.com/maps/api/geocode/json",
             params={"address": f"{location}, {city}", "key": api_key},
@@ -141,7 +137,6 @@ def _get_landmarks_google(location: str, city: str, n: int = 3):
         loc = geo["results"][0]["geometry"]["location"]
         lat, lng = loc["lat"], loc["lng"]
 
-        # 2. Nearby Search — prioritise landmark/point_of_interest types
         places = requests.get(
             "https://maps.googleapis.com/maps/api/place/nearbysearch/json",
             params={
@@ -168,7 +163,7 @@ def _get_landmarks_google(location: str, city: str, n: int = 3):
         results.sort(key=lambda x: x[0])
         filtered = [(d, name) for d, name in results if d <= 5.0][:n]
         return [
-            f"{name} \u2013 {round(d, 1) if d >= 0.1 else 0.1}km"
+            f"{name} – {round(d, 1) if d >= 0.1 else 0.1}km"
             for d, name in filtered
         ] or None
 
@@ -177,7 +172,6 @@ def _get_landmarks_google(location: str, city: str, n: int = 3):
 
 
 def _get_landmarks_osm(location: str, city: str, n: int = 3):
-    """Fallback: OpenStreetMap / Overpass (no API key needed)."""
     try:
         geo_resp = requests.get(
             "https://nominatim.openstreetmap.org/search",
@@ -190,7 +184,7 @@ def _get_landmarks_osm(location: str, city: str, n: int = 3):
             return None
         lat = float(geo_data[0]["lat"])
         lon = float(geo_data[0]["lon"])
-        time.sleep(1.1)  # Nominatim rate-limit
+        time.sleep(1.1)
 
         overpass_query = f"""
 [out:json][timeout:12];
@@ -223,10 +217,10 @@ out center 20;
         ranked.sort(key=lambda x: x[0])
         results = []
         for dist, name in ranked:
-            if dist > 5.0:          # hard cap at 5km
+            if dist > 5.0:
                 break
             km = round(dist, 1) if dist >= 0.1 else 0.1
-            results.append(f"{name} \u2013 {km}km")
+            results.append(f"{name} – {km}km")
             if len(results) == n:
                 break
 
@@ -237,10 +231,6 @@ out center 20;
 
 
 def get_real_landmarks(location: str, city: str, n: int = 3):
-    """
-    Try Google Maps first (if GOOGLE_MAPS_API_KEY is set), then fall back
-    to OpenStreetMap. Returns list of 'Name – Xkm' strings or None.
-    """
     result = _get_landmarks_google(location, city, n)
     if result and len(result) >= n:
         return result
@@ -252,24 +242,17 @@ def get_real_landmarks(location: str, city: str, n: int = 3):
 # ---------------------------------------------------------------------------
 
 def generate_site_content(site: dict, client: anthropic.Anthropic) -> dict:
-    """
-    Call Claude to generate tagline, descriptions, and landmarks for one site.
-    Returns a dict with keys: tagline, location_desc, visibility_desc,
-    audience_desc, landmark_1, landmark_2, landmark_3.
-    """
     site_name = site.get("Site Name", "")
-    location = site.get("Location", "")
-    market = site.get("Market", "")
-    fmt = site.get("Format", "")
-    size = site.get("Size", "")
+    location  = site.get("Location", "")
+    market    = site.get("Market", "")
+    fmt       = site.get("Format", "")
+    size      = site.get("Size", "")
     is_mobile = str(location).strip().lower() == "various"
 
-    # For mobile/bus routes use the city centre as the lookup address
     lookup_address = market if is_mobile else location
     real_landmarks: list | None = get_real_landmarks(lookup_address, market)
 
     if real_landmarks:
-        # We already have real landmarks — tell Claude not to generate them
         landmark_instruction = (
             "Real nearby landmarks have already been sourced from a map service. "
             "For landmark_1/2/3 return exactly these strings unchanged:\n"
@@ -284,12 +267,12 @@ def generate_site_content(site: dict, client: anthropic.Anthropic) -> dict:
         landmark_instruction = (
             "Real map lookup was unavailable. Use your knowledge of this city to name "
             "3 specific, well-known nearby landmarks within 5km. "
-            'Format each as "Landmark Name \u2013 0.Xkm" (max 5km).'
+            'Format each as "Landmark Name – 0.Xkm" (max 5km).'
         )
         landmark_format = (
-            '"landmark_1": "Landmark Name \u2013 0.Xkm",\n'
-            '  "landmark_2": "Landmark Name \u2013 0.Xkm",\n'
-            '  "landmark_3": "Landmark Name \u2013 0.Xkm"'
+            '"landmark_1": "Landmark Name – 0.Xkm",\n'
+            '  "landmark_2": "Landmark Name – 0.Xkm",\n'
+            '  "landmark_3": "Landmark Name – 0.Xkm"'
         )
 
     prompt = f"""You are writing punchy, professional copy for an OOH (Out-of-Home) advertising proposal.
@@ -320,17 +303,68 @@ Return ONLY valid JSON (no markdown fences, no extra text) with exactly these ke
     )
 
     raw = response.content[0].text.strip()
-    # Strip markdown fences if the model adds them anyway
     raw = re.sub(r"^```[a-z]*\n?", "", raw)
     raw = re.sub(r"\n?```$", "", raw)
     return json.loads(raw)
 
 
 # ---------------------------------------------------------------------------
-# Core processing function (runs in background thread)
+# Helper: build replacement maps from a site plan dict
 # ---------------------------------------------------------------------------
 
-def process_job(job_id: str, excel_path: Path, pptx_path: Path):
+def _build_replacements(site: dict) -> tuple[dict, dict]:
+    """Return (replacements, ordered) dicts for replace_text_in_slide."""
+    lm = [site.get("landmark_1", ""), site.get("landmark_2", ""), site.get("landmark_3", "")]
+
+    replacements = {
+        # xyz-format template tokens
+        "Site Name":       site.get("site_name", ""),
+        "Headline":        site.get("tagline", ""),
+        "Size: xyz":       f"Size: {site.get('size', '')}",
+        "Format: xyz":     f"Format: {site.get('format', '')}",
+        "Location: xyz":   f"Location: {site.get('location', '')}",
+        "Frequency: xyz":  f"Frequency: {site.get('frequency', '')}",
+        "Units: xyz":      f"Units: {site.get('units', '')}",
+        "Traffic: xyz":    f"Traffic: {site.get('traffic', '')}",
+        # {TOKEN} style
+        "{SITE_NAME}":      site.get("site_name", ""),
+        "{TAGLINE}":        site.get("tagline", ""),
+        "{LOCATION_DESC}":  site.get("location_desc", ""),
+        "{VISIBILITY_DESC}": site.get("visibility_desc", ""),
+        "{AUDIENCE_DESC}":  site.get("audience_desc", ""),
+        "{SIZE}":           site.get("size", ""),
+        "{LOCATION}":       site.get("location", ""),
+        "{UNITS}":          site.get("units", ""),
+        "{FORMAT}":         site.get("format", ""),
+        "{FREQUENCY}":      site.get("frequency", ""),
+        "{TRAFFIC}":        site.get("traffic", ""),
+        "{LANDMARK_1}":     lm[0],
+        "{LANDMARK_2}":     lm[1],
+        "{LANDMARK_3}":     lm[2],
+        "{MARKET}":         site.get("market", ""),
+    }
+
+    ordered = {
+        "Text": [
+            site.get("location_desc", ""),
+            site.get("visibility_desc", ""),
+            site.get("audience_desc", ""),
+        ],
+        "Xyz - 0.5km":     lm,
+        "Xyz – 0.5km": lm,
+        "Xyz –0.5km":  lm,
+        "Xyz -0.5km":      lm,
+    }
+
+    return replacements, ordered
+
+
+# ---------------------------------------------------------------------------
+# PPTX build worker (shared by both plan-based and legacy one-shot flows)
+# ---------------------------------------------------------------------------
+
+def build_pptx_from_plan(job_id: str, pptx_path: Path, plan: list):
+    """Background job: build PPTX from a pre-computed plan list."""
     def update(status: str, message: str, progress: int = 0):
         with jobs_lock:
             jobs[job_id]["status"] = status
@@ -338,141 +372,29 @@ def process_job(job_id: str, excel_path: Path, pptx_path: Path):
             jobs[job_id]["progress"] = progress
 
     try:
-        # ── 1. Read Excel ───────────────────────────────────────────────────
-        update("processing", "Reading Excel file…", 5)
-        df = pd.read_excel(excel_path, engine="openpyxl")
-
-        # Normalise column names (strip whitespace)
-        df.columns = [c.strip() for c in df.columns]
-
-        # Forward-fill the Market column to handle merged cells
-        if "Market" in df.columns:
-            df["Market"] = df["Market"].ffill()
-
-        # Drop rows where Site Name is empty
-        if "Site Name" not in df.columns:
-            raise ValueError("Excel file must have a 'Site Name' column.")
-        df = df[df["Site Name"].notna() & (df["Site Name"].astype(str).str.strip() != "")]
-        df = df.reset_index(drop=True)
-
-        if df.empty:
-            raise ValueError("No valid site rows found in the Excel file.")
-
-        total_sites = len(df)
-        update("processing", f"Found {total_sites} site(s). Loading template…", 10)
-
-        # ── 2. Load template PPTX ──────────────────────────────────────────
+        update("building", "Loading template…", 5)
         prs = Presentation(str(pptx_path))
         if not prs.slides:
             raise ValueError("The PowerPoint template has no slides.")
 
-        # Snapshot the original template slide BEFORE any modifications.
         template_slide  = prs.slides[0]
         template_layout = template_slide.slide_layout
         template_spTree = copy.deepcopy(template_slide.shapes._spTree)
-        # Also snapshot the serialised spTree XML so we can do rId remapping
         template_spTree_xml = etree.tostring(template_spTree, encoding="unicode")
 
-        # ── 3. Set up Anthropic client ─────────────────────────────────────
-        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-        if not api_key:
-            raise ValueError(
-                "ANTHROPIC_API_KEY environment variable is not set. "
-                "Add it to your environment before running the app."
-            )
-        client = anthropic.Anthropic(api_key=api_key)
+        total = len(plan)
 
-        # ── 4. Process each row ────────────────────────────────────────────
-        for idx, row in df.iterrows():
-            pct = 10 + int((idx / total_sites) * 80)
-            site_name = str(row.get("Site Name", "")).strip()
-            update("processing", f"Generating slide {idx + 1}/{total_sites}: {site_name}…", pct)
+        for idx, site in enumerate(plan):
+            pct = 5 + int((idx / total) * 90)
+            update("building", f"Building slide {idx + 1}/{total}: {site.get('site_name', '')}…", pct)
 
-            # --- Build frequency string ---
-            spot_dur = str(row.get("Spot Duration", "")).strip()
-            sov_loop = str(row.get("SOV/Loop", "")).strip()
-            if spot_dur.lower() in ("", "nan", "n/a", "na"):
-                frequency = sov_loop
-            else:
-                frequency = f"{spot_dur} {sov_loop}".strip()
+            replacements, ordered = _build_replacements(site)
 
-            # --- Format traffic with commas ---
-            raw_impacts = row.get("Impacts", "")
-            try:
-                traffic = f"{int(float(str(raw_impacts).replace(',', ''))):,}"
-            except (ValueError, TypeError):
-                traffic = str(raw_impacts).strip()
-
-            # --- AI content ---
-            site_dict = row.to_dict()
-            ai = generate_site_content(site_dict, client)
-
-            # --- Values shorthand ---
-            size     = str(row.get("Size", "")).strip()
-            location = str(row.get("Location", "")).strip()
-            units    = str(row.get("Units/Faces", "")).strip()
-            fmt      = str(row.get("Format", "")).strip()
-            market   = str(row.get("Market", "")).strip()
-
-            # --- Build replacement map ---
-            # Matches the exact placeholder strings in the "xyz format" template.
-            # Also supports {TOKEN} style for custom templates.
-            replacements = {
-                # ── Title ──────────────────────────────────────────────────
-                "Site Name":        site_name,
-                "Headline":         ai.get("tagline", ""),
-                # ── Additional Information boxes ───────────────────────────
-                "Size: xyz":        f"Size: {size}",
-                "Format: xyz":      f"Format: {fmt}",
-                "Location: xyz":    f"Location: {location}",
-                "Frequency: xyz":   f"Frequency: {frequency}",
-                "Units: xyz":       f"Units: {units}",
-                "Traffic: xyz":     f"Traffic: {traffic}",
-                # ── {TOKEN} style (for custom templates) ──────────────────
-                "{SITE_NAME}":      site_name,
-                "{TAGLINE}":        ai.get("tagline", ""),
-                "{LOCATION_DESC}":  ai.get("location_desc", ""),
-                "{VISIBILITY_DESC}": ai.get("visibility_desc", ""),
-                "{AUDIENCE_DESC}":  ai.get("audience_desc", ""),
-                "{SIZE}":           size,
-                "{LOCATION}":       location,
-                "{UNITS}":          units,
-                "{FORMAT}":         fmt,
-                "{FREQUENCY}":      frequency,
-                "{TRAFFIC}":        traffic,
-                "{LANDMARK_1}":     ai.get("landmark_1", ""),
-                "{LANDMARK_2}":     ai.get("landmark_2", ""),
-                "{LANDMARK_3}":     ai.get("landmark_3", ""),
-                "{MARKET}":         market,
-            }
-
-            lm = [ai.get("landmark_1", ""), ai.get("landmark_2", ""), ai.get("landmark_3", "")]
-
-            # --- Ordered replacements (same token appears multiple times) ---
-            # Exact paragraph texts confirmed from template XML:
-            #   descriptions → "Text"  (×3)
-            #   landmarks    → "Xyz - 0.5km"  (×3, plain hyphen with spaces)
-            ordered = {
-                "Text": [
-                    ai.get("location_desc", ""),
-                    ai.get("visibility_desc", ""),
-                    ai.get("audience_desc", ""),
-                ],
-                "Xyz - 0.5km": lm,          # exact match (confirmed from template XML)
-                "Xyz \u2013 0.5km": lm,     # en-dash with spaces fallback
-                "Xyz \u20130.5km": lm,      # en-dash no trailing space fallback
-                "Xyz -0.5km": lm,           # hyphen no leading space fallback
-            }
-
-            # --- Select / create the slide ---
             if idx == 0:
                 slide = prs.slides[0]
             else:
-                # Add a fresh slide using the template layout
                 slide = prs.slides.add_slide(template_layout)
 
-                # Copy image/media relationships from template slide → new slide
-                # and build an rId remapping table
                 rId_map = {}
                 for rel_id, rel in template_slide.part.rels.items():
                     if "image" in rel.reltype or "media" in rel.reltype:
@@ -483,13 +405,11 @@ def process_job(job_id: str, excel_path: Path, pptx_path: Path):
                         except Exception:
                             pass
 
-                # Start from the serialised template XML and apply rId remapping
                 xml = template_spTree_xml
                 for old_id, new_id in rId_map.items():
                     xml = xml.replace(f'r:embed="{old_id}"', f'r:embed="{new_id}"')
                     xml = xml.replace(f'r:link="{old_id}"',  f'r:link="{new_id}"')
 
-                # Parse the updated XML and attach to the new slide's spTree
                 new_tree = slide.shapes._spTree
                 for child in list(new_tree):
                     new_tree.remove(child)
@@ -498,27 +418,208 @@ def process_job(job_id: str, excel_path: Path, pptx_path: Path):
 
             replace_text_in_slide(slide, replacements, ordered)
 
-        # ── 5. Save output ─────────────────────────────────────────────────
-        update("processing", "Saving output file…", 95)
+        update("building", "Saving output file…", 96)
         output_filename = f"OOH_Proposal_{job_id[:8]}.pptx"
         output_path = OUTPUT_FOLDER / output_filename
         prs.save(str(output_path))
 
         with jobs_lock:
-            jobs[job_id]["status"] = "done"
-            jobs[job_id]["message"] = f"Done! {total_sites} slide(s) generated."
+            jobs[job_id]["status"]   = "done"
+            jobs[job_id]["message"]  = f"Done! {total} slide(s) generated."
             jobs[job_id]["progress"] = 100
-            jobs[job_id]["output"] = output_filename
+            jobs[job_id]["output"]   = output_filename
 
     except Exception as exc:
         with jobs_lock:
-            jobs[job_id]["status"] = "error"
-            jobs[job_id]["message"] = f"Error: {exc}"
+            jobs[job_id]["status"]   = "error"
+            jobs[job_id]["message"]  = f"Error: {exc}"
             jobs[job_id]["progress"] = 0
         print(traceback.format_exc())
 
     finally:
-        # Clean up uploaded files
+        try:
+            pptx_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+# ---------------------------------------------------------------------------
+# Plan generation worker
+# ---------------------------------------------------------------------------
+
+def generate_plan_job(job_id: str, excel_path: Path):
+    """Background job: read Excel + AI/landmarks, produce a content plan."""
+    def update(status: str, message: str, progress: int = 0):
+        with jobs_lock:
+            jobs[job_id]["status"]   = status
+            jobs[job_id]["message"]  = message
+            jobs[job_id]["progress"] = progress
+
+    try:
+        update("planning", "Reading Excel file…", 5)
+        df = pd.read_excel(excel_path, engine="openpyxl")
+        df.columns = [c.strip() for c in df.columns]
+
+        if "Market" in df.columns:
+            df["Market"] = df["Market"].ffill()
+
+        if "Site Name" not in df.columns:
+            raise ValueError("Excel file must have a 'Site Name' column.")
+
+        df = df[df["Site Name"].notna() & (df["Site Name"].astype(str).str.strip() != "")]
+        df = df.reset_index(drop=True)
+
+        if df.empty:
+            raise ValueError("No valid site rows found in the Excel file.")
+
+        total = len(df)
+        update("planning", f"Found {total} site(s). Connecting to AI…", 10)
+
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        if not api_key:
+            raise ValueError("ANTHROPIC_API_KEY environment variable is not set.")
+        client = anthropic.Anthropic(api_key=api_key)
+
+        plan = []
+        for idx, row in df.iterrows():
+            pct = 10 + int(((idx + 1) / total) * 85)
+            site_name = str(row.get("Site Name", "")).strip()
+            update("planning", f"Researching site {idx + 1}/{total}: {site_name}…", pct)
+
+            spot_dur = str(row.get("Spot Duration", "")).strip()
+            sov_loop = str(row.get("SOV/Loop", "")).strip()
+            if spot_dur.lower() in ("", "nan", "n/a", "na"):
+                frequency = sov_loop
+            else:
+                frequency = f"{spot_dur} {sov_loop}".strip()
+
+            raw_impacts = row.get("Impacts", "")
+            try:
+                traffic = f"{int(float(str(raw_impacts).replace(',', ''))):,}"
+            except (ValueError, TypeError):
+                traffic = str(raw_impacts).strip()
+
+            ai = generate_site_content(row.to_dict(), client)
+
+            plan.append({
+                "site_name":      site_name,
+                "market":         str(row.get("Market", "")).strip(),
+                "location":       str(row.get("Location", "")).strip(),
+                "format":         str(row.get("Format", "")).strip(),
+                "size":           str(row.get("Size", "")).strip(),
+                "units":          str(row.get("Units/Faces", "")).strip(),
+                "frequency":      frequency,
+                "traffic":        traffic,
+                "tagline":        ai.get("tagline", ""),
+                "location_desc":  ai.get("location_desc", ""),
+                "visibility_desc": ai.get("visibility_desc", ""),
+                "audience_desc":  ai.get("audience_desc", ""),
+                "landmark_1":     ai.get("landmark_1", ""),
+                "landmark_2":     ai.get("landmark_2", ""),
+                "landmark_3":     ai.get("landmark_3", ""),
+            })
+
+        with jobs_lock:
+            jobs[job_id]["status"]   = "plan_ready"
+            jobs[job_id]["message"]  = f"Plan ready — {total} site(s). Review and edit, then build."
+            jobs[job_id]["progress"] = 100
+            jobs[job_id]["plan"]     = plan
+
+    except Exception as exc:
+        with jobs_lock:
+            jobs[job_id]["status"]   = "error"
+            jobs[job_id]["message"]  = f"Error: {exc}"
+            jobs[job_id]["progress"] = 0
+        print(traceback.format_exc())
+
+    finally:
+        try:
+            excel_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+# ---------------------------------------------------------------------------
+# Legacy one-shot worker (kept for /api/generate backward compat)
+# ---------------------------------------------------------------------------
+
+def process_job(job_id: str, excel_path: Path, pptx_path: Path):
+    """Upload + AI + build in one shot (legacy endpoint)."""
+    def update(status: str, message: str, progress: int = 0):
+        with jobs_lock:
+            jobs[job_id]["status"]   = status
+            jobs[job_id]["message"]  = message
+            jobs[job_id]["progress"] = progress
+
+    try:
+        update("processing", "Reading Excel file…", 5)
+        df = pd.read_excel(excel_path, engine="openpyxl")
+        df.columns = [c.strip() for c in df.columns]
+
+        if "Market" in df.columns:
+            df["Market"] = df["Market"].ffill()
+
+        if "Site Name" not in df.columns:
+            raise ValueError("Excel file must have a 'Site Name' column.")
+        df = df[df["Site Name"].notna() & (df["Site Name"].astype(str).str.strip() != "")]
+        df = df.reset_index(drop=True)
+
+        if df.empty:
+            raise ValueError("No valid site rows found in the Excel file.")
+
+        total = len(df)
+        update("processing", f"Found {total} site(s). Loading template…", 10)
+
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        if not api_key:
+            raise ValueError("ANTHROPIC_API_KEY environment variable is not set.")
+        client = anthropic.Anthropic(api_key=api_key)
+
+        plan = []
+        for idx, row in df.iterrows():
+            pct = 10 + int(((idx + 1) / total) * 80)
+            site_name = str(row.get("Site Name", "")).strip()
+            update("processing", f"Processing {idx + 1}/{total}: {site_name}…", pct)
+
+            spot_dur = str(row.get("Spot Duration", "")).strip()
+            sov_loop = str(row.get("SOV/Loop", "")).strip()
+            frequency = sov_loop if spot_dur.lower() in ("", "nan", "n/a", "na") else f"{spot_dur} {sov_loop}".strip()
+
+            raw_impacts = row.get("Impacts", "")
+            try:
+                traffic = f"{int(float(str(raw_impacts).replace(',', ''))):,}"
+            except (ValueError, TypeError):
+                traffic = str(raw_impacts).strip()
+
+            ai = generate_site_content(row.to_dict(), client)
+
+            plan.append({
+                "site_name":       site_name,
+                "market":          str(row.get("Market", "")).strip(),
+                "location":        str(row.get("Location", "")).strip(),
+                "format":          str(row.get("Format", "")).strip(),
+                "size":            str(row.get("Size", "")).strip(),
+                "units":           str(row.get("Units/Faces", "")).strip(),
+                "frequency":       frequency,
+                "traffic":         traffic,
+                "tagline":         ai.get("tagline", ""),
+                "location_desc":   ai.get("location_desc", ""),
+                "visibility_desc": ai.get("visibility_desc", ""),
+                "audience_desc":   ai.get("audience_desc", ""),
+                "landmark_1":      ai.get("landmark_1", ""),
+                "landmark_2":      ai.get("landmark_2", ""),
+                "landmark_3":      ai.get("landmark_3", ""),
+            })
+
+        excel_path.unlink(missing_ok=True)
+        build_pptx_from_plan(job_id, pptx_path, plan)
+
+    except Exception as exc:
+        with jobs_lock:
+            jobs[job_id]["status"]   = "error"
+            jobs[job_id]["message"]  = f"Error: {exc}"
+            jobs[job_id]["progress"] = 0
+        print(traceback.format_exc())
         try:
             excel_path.unlink(missing_ok=True)
             pptx_path.unlink(missing_ok=True)
@@ -535,13 +636,15 @@ def index():
     return render_template("index.html")
 
 
-@app.route("/api/generate", methods=["POST"])
-def generate():
-    """Accept the two uploaded files and kick off background processing."""
+# ── Pro flow ────────────────────────────────────────────────────────────────
+
+@app.route("/api/plan", methods=["POST"])
+def create_plan():
+    """Step 1: Upload files, generate content plan (AI + landmarks)."""
     if "excel" not in request.files or "template" not in request.files:
         return jsonify({"error": "Both 'excel' and 'template' files are required."}), 400
 
-    excel_file = request.files["excel"]
+    excel_file    = request.files["excel"]
     template_file = request.files["template"]
 
     if not excel_file.filename.endswith((".xlsx", ".xls")):
@@ -549,28 +652,57 @@ def generate():
     if not template_file.filename.endswith(".pptx"):
         return jsonify({"error": "Template file must be .pptx"}), 400
 
-    job_id = uuid.uuid4().hex
-
+    job_id     = uuid.uuid4().hex
     excel_path = UPLOAD_FOLDER / f"{job_id}_data.xlsx"
-    pptx_path = UPLOAD_FOLDER / f"{job_id}_template.pptx"
+    pptx_path  = UPLOAD_FOLDER / f"{job_id}_template.pptx"
     excel_file.save(str(excel_path))
     template_file.save(str(pptx_path))
 
     with jobs_lock:
         jobs[job_id] = {
-            "status": "queued",
-            "message": "Queued…",
-            "progress": 0,
-            "output": None,
+            "status":    "planning",
+            "message":   "Starting…",
+            "progress":  0,
+            "plan":      None,
+            "pptx_path": str(pptx_path),
+            "output":    None,
         }
 
-    thread = threading.Thread(
-        target=process_job, args=(job_id, excel_path, pptx_path), daemon=True
-    )
-    thread.start()
-
+    threading.Thread(target=generate_plan_job, args=(job_id, excel_path), daemon=True).start()
     return jsonify({"job_id": job_id})
 
+
+@app.route("/api/build", methods=["POST"])
+def build():
+    """Step 2: Submit (possibly edited) plan → build PPTX."""
+    data = request.get_json(force=True, silent=True) or {}
+    job_id = data.get("job_id")
+    plan   = data.get("plan")
+
+    if not job_id or not plan:
+        return jsonify({"error": "job_id and plan are required"}), 400
+
+    with jobs_lock:
+        job = jobs.get(job_id)
+
+    if not job:
+        return jsonify({"error": "Job not found — session may have expired."}), 404
+
+    pptx_path = Path(job.get("pptx_path", ""))
+    if not pptx_path.exists():
+        return jsonify({"error": "Template file not found. Please re-upload and start again."}), 404
+
+    with jobs_lock:
+        jobs[job_id]["status"]   = "building"
+        jobs[job_id]["message"]  = "Starting build…"
+        jobs[job_id]["progress"] = 0
+        jobs[job_id]["output"]   = None
+
+    threading.Thread(target=build_pptx_from_plan, args=(job_id, pptx_path, plan), daemon=True).start()
+    return jsonify({"job_id": job_id})
+
+
+# ── Shared polling + download ────────────────────────────────────────────────
 
 @app.route("/api/status/<job_id>")
 def status(job_id: str):
@@ -578,7 +710,14 @@ def status(job_id: str):
         job = jobs.get(job_id)
     if not job:
         return jsonify({"error": "Job not found"}), 404
-    return jsonify(job)
+    # Only return fields safe for the frontend (omit pptx_path)
+    return jsonify({
+        "status":   job["status"],
+        "message":  job["message"],
+        "progress": job["progress"],
+        "plan":     job.get("plan"),
+        "output":   job.get("output"),
+    })
 
 
 @app.route("/api/download/<job_id>")
@@ -588,19 +727,9 @@ def download(job_id: str):
     if not job or job["status"] != "done":
         return jsonify({"error": "File not ready"}), 404
 
-    output_filename = job["output"]
-    output_path = OUTPUT_FOLDER / output_filename
-
+    output_path = OUTPUT_FOLDER / job["output"]
     if not output_path.exists():
         return jsonify({"error": "Output file missing"}), 404
-
-    def cleanup():
-        try:
-            output_path.unlink(missing_ok=True)
-        except Exception:
-            pass
-        with jobs_lock:
-            jobs.pop(job_id, None)
 
     response = send_file(
         str(output_path),
@@ -608,12 +737,52 @@ def download(job_id: str):
         download_name="OOH_Proposal.pptx",
         mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation",
     )
-    # Schedule cleanup after response is sent
+
     @response.call_on_close
     def _cleanup():
-        cleanup()
+        try:
+            output_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+        with jobs_lock:
+            jobs.pop(job_id, None)
 
     return response
+
+
+# ── Legacy one-shot endpoint (backward compat) ───────────────────────────────
+
+@app.route("/api/generate", methods=["POST"])
+def generate():
+    if "excel" not in request.files or "template" not in request.files:
+        return jsonify({"error": "Both 'excel' and 'template' files are required."}), 400
+
+    excel_file    = request.files["excel"]
+    template_file = request.files["template"]
+
+    if not excel_file.filename.endswith((".xlsx", ".xls")):
+        return jsonify({"error": "Excel file must be .xlsx or .xls"}), 400
+    if not template_file.filename.endswith(".pptx"):
+        return jsonify({"error": "Template file must be .pptx"}), 400
+
+    job_id     = uuid.uuid4().hex
+    excel_path = UPLOAD_FOLDER / f"{job_id}_data.xlsx"
+    pptx_path  = UPLOAD_FOLDER / f"{job_id}_template.pptx"
+    excel_file.save(str(excel_path))
+    template_file.save(str(pptx_path))
+
+    with jobs_lock:
+        jobs[job_id] = {
+            "status":    "queued",
+            "message":   "Queued…",
+            "progress":  0,
+            "plan":      None,
+            "pptx_path": str(pptx_path),
+            "output":    None,
+        }
+
+    threading.Thread(target=process_job, args=(job_id, excel_path, pptx_path), daemon=True).start()
+    return jsonify({"job_id": job_id})
 
 
 # ---------------------------------------------------------------------------
@@ -621,6 +790,6 @@ def download(job_id: str):
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
+    port  = int(os.environ.get("PORT", 5000))
     debug = os.environ.get("FLASK_DEBUG", "0") == "1"
     app.run(host="0.0.0.0", port=port, debug=debug)
