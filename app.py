@@ -323,10 +323,11 @@ def generate_site_content(site: dict, client: anthropic.Anthropic) -> dict:
             "For landmark_1/2/3 return exactly these strings unchanged:\n"
             + "\n".join(f"  {i+1}. {l}" for i, l in enumerate(real_landmarks))
         )
+        # Use json.dumps to safely escape any special characters in landmark strings
         landmark_format = (
-            f'"landmark_1": "{real_landmarks[0]}",\n'
-            f'  "landmark_2": "{real_landmarks[1]}",\n'
-            f'  "landmark_3": "{real_landmarks[2]}"'
+            f'"landmark_1": {json.dumps(real_landmarks[0])},\n'
+            f'  "landmark_2": {json.dumps(real_landmarks[1])},\n'
+            f'  "landmark_3": {json.dumps(real_landmarks[2])}'
         )
     else:
         landmark_instruction = (
@@ -370,7 +371,15 @@ Return ONLY valid JSON (no markdown fences, no extra text) with exactly these ke
     raw = response.content[0].text.strip()
     raw = re.sub(r"^```[a-z]*\n?", "", raw)
     raw = re.sub(r"\n?```$", "", raw)
-    return json.loads(raw)
+    raw = raw.strip()
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        # Extract the outermost {...} block and retry
+        m = re.search(r'\{[\s\S]*\}', raw)
+        if m:
+            return json.loads(m.group())
+        raise ValueError(f"AI returned invalid JSON: {raw[:300]}")
 
 
 # ---------------------------------------------------------------------------
