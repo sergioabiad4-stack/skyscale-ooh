@@ -373,7 +373,10 @@ Return ONLY valid JSON (no markdown fences, no extra text) with exactly these ke
     raw = response.content[0].text.strip()
     raw = re.sub(r"^```[a-z]*\n?", "", raw)
     raw = re.sub(r"\n?```$", "", raw)
-    return json.loads(repair_json(raw.strip()))
+    result = repair_json(raw.strip(), return_objects=True)
+    if not isinstance(result, dict):
+        raise ValueError(f"AI returned non-dict JSON: {raw[:200]}")
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -590,7 +593,19 @@ def generate_plan_job(job_id: str, excel_path: Path):
             except (ValueError, TypeError):
                 traffic = str(raw_impacts).strip()
 
-            ai = generate_site_content(row.to_dict(), client)
+            try:
+                ai = generate_site_content(row.to_dict(), client)
+            except Exception as ai_err:
+                print(f"[WARN] AI failed for site {site_name!r}: {ai_err}")
+                ai = {
+                    "tagline":         site_name,
+                    "location_desc":   f"Located in {market}.",
+                    "visibility_desc": "High-visibility advertising format with strong sightlines.",
+                    "audience_desc":   "Reaches a broad audience of commuters and local shoppers.",
+                    "landmark_1":      "City Centre – 1.0km",
+                    "landmark_2":      "Main Transport Hub – 1.5km",
+                    "landmark_3":      "Business District – 2.0km",
+                }
 
             # Fetch Google Maps screenshot
             map_address = market if is_mobile else location
