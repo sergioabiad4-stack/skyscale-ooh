@@ -281,6 +281,31 @@
     }
     .stat-chip strong { color: var(--brand); }
 
+    /* ── Map thumbnail ── */
+    .map-wrap {
+      margin-top: 1.1rem;
+      border-radius: 8px; overflow: hidden;
+      border: 1.5px solid var(--border);
+      background: #f3f4f8;
+      position: relative;
+    }
+    .map-wrap img {
+      display: block; width: 100%; height: 180px;
+      object-fit: cover; object-position: center;
+    }
+    .map-label {
+      position: absolute; bottom: 6px; left: 8px;
+      font-size: .65rem; font-weight: 700;
+      background: rgba(26,26,46,.75); color: #fff;
+      padding: .2rem .5rem; border-radius: 4px;
+      letter-spacing: .04em; text-transform: uppercase;
+    }
+    .map-no {
+      height: 44px; display: flex; align-items: center;
+      justify-content: center; gap: .4rem;
+      font-size: .75rem; color: var(--muted);
+    }
+
     /* ── Build bar (bottom of plan view) ── */
     .build-bar {
       position: sticky; bottom: 0;
@@ -620,7 +645,7 @@
           </div>
 
           <!-- Site data (read-only) -->
-          <div class="field-group" style="margin-bottom:0">
+          <div class="field-group">
             <label class="field-label">Site Data <span style="font-size:.62rem;color:#9ca3af;text-transform:none;letter-spacing:0;font-weight:400">(from Excel)</span></label>
             <div class="stats-row">
               ${site.size      ? `<span class="stat-chip"><strong>Size</strong> ${esc(site.size)}</span>` : ''}
@@ -630,6 +655,19 @@
               ${site.traffic   ? `<span class="stat-chip"><strong>Traffic</strong> ${esc(site.traffic)}</span>` : ''}
               ${site.location  ? `<span class="stat-chip"><strong>Loc</strong> ${esc(site.location)}</span>` : ''}
             </div>
+          </div>
+
+          <!-- Google Maps screenshot -->
+          <div class="field-group" style="margin-bottom:0">
+            <label class="field-label">Google Maps Screenshot <span class="ai-tag">Map</span></label>
+            ${site.has_map
+              ? `<div class="map-wrap">
+                   <img src="/api/map/${jobId}/${idx}" alt="Map for ${esc(site.site_name)}"
+                        onerror="this.closest('.map-wrap').innerHTML='<div class=\\'map-no\\'>Map image unavailable</div>'" />
+                   <span class="map-label">📍 ${esc(site.location || site.market)}</span>
+                 </div>`
+              : `<div class="map-wrap"><div class="map-no">⚠️ No GOOGLE_MAPS_API_KEY set — map not captured</div></div>`
+            }
           </div>
 
         </div><!-- /card-body -->

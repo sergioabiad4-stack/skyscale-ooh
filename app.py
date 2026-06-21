@@ -13,6 +13,7 @@ import requests
 from flask import Flask, request, jsonify, send_file, render_template
 import pandas as pd
 from pptx import Presentation
+from pptx.util import Inches
 from pptx.oxml.ns import qn
 from lxml import etree
 import anthropic
@@ -238,6 +239,70 @@ def get_real_landmarks(location: str, city: str, n: int = 3):
 
 
 # ---------------------------------------------------------------------------
+# Google Maps Static screenshot
+# Adjust these constants to match your template layout (inches from top-left)
+# ---------------------------------------------------------------------------
+
+MAP_IMG_LEFT   = Inches(6.60)   # horizontal offset from slide left edge
+MAP_IMG_TOP    = Inches(1.20)   # vertical offset from slide top edge
+MAP_IMG_WIDTH  = Inches(3.10)   # image width
+MAP_IMG_HEIGHT = Inches(2.10)   # image height
+
+
+def get_map_image_bytes(location: str, city: str, zoom: int = 16) -> bytes | None:
+    """
+    Fetch a Google Maps Static API image (600×400 px @2x) for a location.
+    Returns raw PNG/JPEG bytes, or None if unavailable.
+    """
+    api_key = os.environ.get("GOOGLE_MAPS_API_KEY", "")
+    if not api_key:
+        return None
+    try:
+        # Geocode address → lat/lng
+        geo = requests.get(
+            "https://maps.googleapis.com/maps/api/geocode/json",
+            params={"address": f"{location}, {city}", "key": api_key},
+            timeout=8,
+        ).json()
+        if geo.get("status") != "OK" or not geo.get("results"):
+            return None
+        loc = geo["results"][0]["geometry"]["location"]
+        lat, lng = loc["lat"], loc["lng"]
+
+        # Fetch static map
+        resp = requests.get(
+            "https://maps.googleapis.com/maps/api/staticmap",
+            params={
+                "center": f"{lat},{lng}",
+                "zoom": zoom,
+                "size": "600x400",
+                "scale": 2,
+                "maptype": "roadmap",
+                "markers": f"color:red|size:mid|{lat},{lng}",
+                "key": api_key,
+            },
+            timeout=12,
+        )
+        ct = resp.headers.get("content-type", "")
+        if resp.status_code == 200 and ct.startswith("image"):
+            return resp.content
+        return None
+    except Exception:
+        return None
+
+
+def _cleanup_map_images(job_id: str):
+    """Delete all map image files for a job."""
+    with jobs_lock:
+        map_paths = jobs.get(job_id, {}).get("map_paths", {})
+    for path_str in map_paths.values():
+        try:
+            Path(path_str).unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+# ---------------------------------------------------------------------------
 # AI content generation
 # ---------------------------------------------------------------------------
 
@@ -382,6 +447,10 @@ def build_pptx_from_plan(job_id: str, pptx_path: Path, plan: list):
         template_spTree = copy.deepcopy(template_slide.shapes._spTree)
         template_spTree_xml = etree.tostring(template_spTree, encoding="unicode")
 
+        # Grab server-side map paths (not sent to client)
+        with jobs_lock:
+            map_paths = dict(jobs.get(job_id, {}).get("map_paths", {}))
+
         total = len(plan)
 
         for idx, site in enumerate(plan):
@@ -418,6 +487,20 @@ def build_pptx_from_plan(job_id: str, pptx_path: Path, plan: list):
 
             replace_text_in_slide(slide, replacements, ordered)
 
+            # Add Google Maps screenshot if available
+            map_path_str = map_paths.get(idx)
+            if map_path_str:
+                map_file = Path(map_path_str)
+                if map_file.exists():
+                    try:
+                        slide.shapes.add_picture(
+                            str(map_file),
+                            MAP_IMG_LEFT, MAP_IMG_TOP,
+                            MAP_IMG_WIDTH, MAP_IMG_HEIGHT,
+                        )
+                    except Exception:
+                        pass  # never let a missing map crash the build
+
         update("building", "Saving output file…", 96)
         output_filename = f"OOH_Proposal_{job_id[:8]}.pptx"
         output_path = OUTPUT_FOLDER / output_filename
@@ -441,6 +524,7 @@ def build_pptx_from_plan(job_id: str, pptx_path: Path, plan: list):
             pptx_path.unlink(missing_ok=True)
         except Exception:
             pass
+        _cleanup_map_images(job_id)
 
 
 # ---------------------------------------------------------------------------
@@ -486,6 +570,10 @@ def generate_plan_job(job_id: str, excel_path: Path):
             site_name = str(row.get("Site Name", "")).strip()
             update("planning", f"Researching site {idx + 1}/{total}: {site_name}…", pct)
 
+            location  = str(row.get("Location", "")).strip()
+            market    = str(row.get("Market", "")).strip()
+            is_mobile = location.lower() == "various"
+
             spot_dur = str(row.get("Spot Duration", "")).strip()
             sov_loop = str(row.get("SOV/Loop", "")).strip()
             if spot_dur.lower() in ("", "nan", "n/a", "na"):
@@ -501,22 +589,35 @@ def generate_plan_job(job_id: str, excel_path: Path):
 
             ai = generate_site_content(row.to_dict(), client)
 
+            # Fetch Google Maps screenshot
+            map_address = market if is_mobile else location
+            map_zoom    = 11 if is_mobile else 16
+            map_bytes   = get_map_image_bytes(map_address, market, zoom=map_zoom)
+            has_map     = False
+            if map_bytes:
+                map_file = UPLOAD_FOLDER / f"{job_id}_map_{idx}.png"
+                map_file.write_bytes(map_bytes)
+                with jobs_lock:
+                    jobs[job_id]["map_paths"][idx] = str(map_file)
+                has_map = True
+
             plan.append({
-                "site_name":      site_name,
-                "market":         str(row.get("Market", "")).strip(),
-                "location":       str(row.get("Location", "")).strip(),
-                "format":         str(row.get("Format", "")).strip(),
-                "size":           str(row.get("Size", "")).strip(),
-                "units":          str(row.get("Units/Faces", "")).strip(),
-                "frequency":      frequency,
-                "traffic":        traffic,
-                "tagline":        ai.get("tagline", ""),
-                "location_desc":  ai.get("location_desc", ""),
+                "site_name":       site_name,
+                "market":          market,
+                "location":        location,
+                "format":          str(row.get("Format", "")).strip(),
+                "size":            str(row.get("Size", "")).strip(),
+                "units":           str(row.get("Units/Faces", "")).strip(),
+                "frequency":       frequency,
+                "traffic":         traffic,
+                "tagline":         ai.get("tagline", ""),
+                "location_desc":   ai.get("location_desc", ""),
                 "visibility_desc": ai.get("visibility_desc", ""),
-                "audience_desc":  ai.get("audience_desc", ""),
-                "landmark_1":     ai.get("landmark_1", ""),
-                "landmark_2":     ai.get("landmark_2", ""),
-                "landmark_3":     ai.get("landmark_3", ""),
+                "audience_desc":   ai.get("audience_desc", ""),
+                "landmark_1":      ai.get("landmark_1", ""),
+                "landmark_2":      ai.get("landmark_2", ""),
+                "landmark_3":      ai.get("landmark_3", ""),
+                "has_map":         has_map,
             })
 
         with jobs_lock:
@@ -664,6 +765,7 @@ def create_plan():
             "message":   "Starting…",
             "progress":  0,
             "plan":      None,
+            "map_paths": {},        # {site_idx: str(path)} — server-side only
             "pptx_path": str(pptx_path),
             "output":    None,
         }
@@ -748,6 +850,23 @@ def download(job_id: str):
             jobs.pop(job_id, None)
 
     return response
+
+
+# ── Map image preview (served to the plan review UI) ────────────────────────
+
+@app.route("/api/map/<job_id>/<int:site_idx>")
+def serve_map(job_id: str, site_idx: int):
+    with jobs_lock:
+        job = jobs.get(job_id)
+    if not job:
+        return "", 404
+    map_path_str = job.get("map_paths", {}).get(site_idx)
+    if not map_path_str:
+        return "", 404
+    p = Path(map_path_str)
+    if not p.exists():
+        return "", 404
+    return send_file(str(p), mimetype="image/png")
 
 
 # ── Legacy one-shot endpoint (backward compat) ───────────────────────────────
