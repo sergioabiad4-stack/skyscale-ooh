@@ -8,14 +8,14 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --brand:   #1a1a2e;
-      --accent:  #e94560;
-      --green:   #10b981;
-      --light:   #f4f6fb;
-      --border:  #e0e4ed;
-      --muted:   #6b7280;
-      --radius:  12px;
-      --shadow:  0 2px 16px rgba(0,0,0,.07);
+      --brand:  #1a1a2e;
+      --accent: #e94560;
+      --green:  #10b981;
+      --light:  #f4f6fb;
+      --border: #e0e4ed;
+      --muted:  #6b7280;
+      --radius: 12px;
+      --shadow: 0 2px 16px rgba(0,0,0,.07);
     }
 
     body {
@@ -29,797 +29,411 @@
       padding: 2rem 1rem 5rem;
     }
 
-    /* ── Header ── */
     header {
       text-align: center;
-      margin-bottom: 1.75rem;
+      margin-bottom: 2.5rem;
     }
-    .wordmark {
-      font-size: 2rem;
-      font-weight: 800;
-      letter-spacing: -.5px;
-      color: var(--brand);
-    }
-    .wordmark span { color: var(--accent); }
-    .subtitle {
-      font-size: .9rem;
-      color: var(--muted);
-      margin-top: .2rem;
-      letter-spacing: .06em;
-      text-transform: uppercase;
-      font-weight: 600;
-    }
-
-    /* ── Step indicator ── */
-    .steps {
-      display: flex;
-      align-items: center;
-      gap: 0;
-      margin-bottom: 2rem;
-      font-size: .8rem;
-      font-weight: 600;
-    }
-    .step {
-      display: flex;
-      align-items: center;
-      gap: .4rem;
-      color: var(--muted);
-    }
-    .step.active { color: var(--brand); }
-    .step.done   { color: var(--green); }
-    .step-num {
-      width: 24px; height: 24px;
-      border-radius: 50%;
-      background: var(--border);
-      display: flex; align-items: center; justify-content: center;
-      font-size: .72rem;
+    header h1 {
+      font-size: 1.9rem;
       font-weight: 700;
-      flex-shrink: 0;
+      color: var(--brand);
+      letter-spacing: -.5px;
     }
-    .step.active .step-num { background: var(--accent); color: #fff; }
-    .step.done   .step-num { background: var(--green);  color: #fff; }
-    .step-sep {
-      width: 32px; height: 2px;
-      background: var(--border);
-      margin: 0 4px;
+    header p {
+      color: var(--muted);
+      margin-top: .4rem;
+      font-size: .95rem;
     }
 
-    /* ── Card (generic) ── */
     .card {
       background: #fff;
       border-radius: var(--radius);
       box-shadow: var(--shadow);
       padding: 2rem;
       width: 100%;
-      max-width: 620px;
+      max-width: 560px;
     }
 
-    /* ── Upload zones ── */
-    .upload-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 1rem;
-      margin-bottom: 1.5rem;
-    }
-    @media (max-width: 480px) { .upload-grid { grid-template-columns: 1fr; } }
-
-    .upload-zone {
+    /* ── Upload view ── */
+    .drop-zone {
       border: 2px dashed var(--border);
-      border-radius: var(--radius);
-      padding: 1.5rem 1rem;
+      border-radius: 10px;
+      padding: 1.8rem 1rem;
       text-align: center;
       cursor: pointer;
       transition: border-color .2s, background .2s;
       position: relative;
     }
-    .upload-zone:hover, .upload-zone.drag-over {
-      border-color: var(--accent); background: #fff5f7;
+    .drop-zone:hover, .drop-zone.dragover {
+      border-color: var(--accent);
+      background: #fff5f6;
     }
-    .upload-zone.has-file { border-color: var(--green); background: #f0fdf4; }
-    .upload-zone input[type="file"] {
+    .drop-zone input[type=file] {
       position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
     }
-    .upload-icon   { font-size: 2rem; margin-bottom: .4rem; display: block; }
-    .upload-label  { font-weight: 600; font-size: .82rem; color: var(--brand); display: block; margin-bottom: .2rem; }
-    .upload-hint   { font-size: .73rem; color: var(--muted); }
-    .upload-filename { font-size: .73rem; color: var(--green); font-weight: 600; margin-top: .4rem; word-break: break-all; }
-
-    /* ── Buttons ── */
-    .btn {
-      display: block; width: 100%; padding: .9rem;
-      background: var(--accent); color: #fff;
-      border: none; border-radius: var(--radius);
-      font-size: .95rem; font-weight: 700; cursor: pointer;
-      letter-spacing: .02em;
-      transition: opacity .2s, transform .1s;
+    .drop-zone .icon { font-size: 2rem; }
+    .drop-zone .label {
+      font-size: .85rem;
+      color: var(--muted);
+      margin-top: .5rem;
     }
-    .btn:hover:not(:disabled) { opacity: .88; transform: translateY(-1px); }
-    .btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
-    .btn-green  { background: var(--green); }
-    .btn-outline {
-      background: transparent; color: var(--brand);
-      border: 2px solid var(--border);
+    .drop-zone .filename {
+      margin-top: .4rem;
+      font-size: .85rem;
       font-weight: 600;
-      margin-bottom: .75rem;
+      color: var(--brand);
+      word-break: break-all;
     }
-    .btn-outline:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); transform: none; opacity: 1; }
 
-    a.btn-dl {
-      display: none;
-      background: var(--green); color: #fff;
-      padding: .9rem; border-radius: var(--radius);
-      font-size: .95rem; font-weight: 700; text-decoration: none;
-      text-align: center; margin-top: .75rem;
-      transition: opacity .2s;
+    .field-label {
+      font-size: .8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      color: var(--muted);
+      margin-bottom: .5rem;
     }
-    a.btn-dl:hover { opacity: .88; }
 
-    /* ── Progress ── */
-    .progress-wrap  { margin-top: 1.5rem; }
-    .progress-track { height: 6px; background: var(--border); border-radius: 99px; overflow: hidden; margin-bottom: .7rem; }
-    .progress-fill  { height: 100%; background: var(--accent); border-radius: 99px; transition: width .4s ease; width: 0%; }
-    .progress-fill.done { background: var(--green); }
-    .status-row {
-      display: flex; align-items: center; gap: .5rem;
-      font-size: .85rem; color: var(--muted);
+    .fields { display: flex; flex-direction: column; gap: 1.2rem; margin-bottom: 1.8rem; }
+
+    .btn {
+      display: flex; align-items: center; justify-content: center; gap: .5rem;
+      width: 100%; padding: .85rem 1.5rem;
+      background: var(--accent); color: #fff;
+      border: none; border-radius: 8px;
+      font-size: 1rem; font-weight: 600;
+      cursor: pointer; transition: opacity .2s, background .2s;
     }
-    .status-row.error { color: #dc2626; }
-    .status-row.done  { color: #059669; }
+    .btn:hover { opacity: .9; }
+    .btn:disabled { background: #ccc; cursor: not-allowed; }
+
+    /* ── Progress view ── */
+    #view-progress { display: none; }
+    #view-progress .phase-label {
+      font-size: .85rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--muted);
+      margin-bottom: 1.2rem;
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+    }
     .spinner {
-      width: 16px; height: 16px;
-      border: 2px solid var(--border); border-top-color: var(--accent);
+      width: 14px; height: 14px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
       border-radius: 50%;
-      animation: spin .7s linear infinite; flex-shrink: 0;
+      animation: spin .7s linear infinite;
+      display: inline-block;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* ── Plan view ── */
-    #view-plan {
-      display: none;
-      width: 100%;
-      max-width: 860px;
-    }
-    .plan-header {
-      display: flex; align-items: center; justify-content: space-between;
-      margin-bottom: 1.25rem; flex-wrap: wrap; gap: .5rem;
-    }
-    .plan-title { font-size: 1.15rem; font-weight: 800; color: var(--brand); }
-    .plan-subtitle { font-size: .82rem; color: var(--muted); margin-top: .15rem; }
-    .plan-actions { display: flex; gap: .5rem; }
-    .link-btn {
-      font-size: .78rem; font-weight: 600; color: var(--accent);
-      background: none; border: none; cursor: pointer; text-decoration: underline;
-      text-underline-offset: 2px;
-    }
-
-    /* ── Site cards ── */
-    .site-card {
-      background: #fff;
-      border: 1.5px solid var(--border);
-      border-radius: var(--radius);
-      margin-bottom: .85rem;
+    .progress-track {
+      height: 8px;
+      background: var(--border);
+      border-radius: 99px;
       overflow: hidden;
-      box-shadow: var(--shadow);
-      transition: border-color .2s;
+      margin-bottom: 1rem;
     }
-    .site-card:focus-within { border-color: #a5b4fc; }
-
-    .card-header {
-      display: flex; align-items: center; gap: .75rem;
-      padding: .85rem 1.1rem; cursor: pointer;
-      user-select: none;
-      background: #fafbfd;
-      border-bottom: 1.5px solid transparent;
-      transition: background .15s;
+    .progress-fill {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 99px;
+      transition: width .4s ease;
+      width: 0%;
     }
-    .card-header:hover { background: #f3f4f8; }
-    .site-card.open .card-header { border-bottom-color: var(--border); }
-
-    .card-num {
-      width: 28px; height: 28px; border-radius: 50%;
-      background: var(--brand); color: #fff;
-      display: flex; align-items: center; justify-content: center;
-      font-size: .72rem; font-weight: 700; flex-shrink: 0;
-    }
-    .card-meta { flex: 1; min-width: 0; }
-    .card-name { font-weight: 700; font-size: .93rem; color: var(--brand); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .card-badges { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .25rem; }
-    .badge {
-      font-size: .68rem; font-weight: 600; padding: .15rem .45rem;
-      border-radius: 99px; background: #e8eaf2; color: #374151;
-    }
-    .badge-mkt  { background: #e0f2fe; color: #075985; }
-    .badge-fmt  { background: #f3e8ff; color: #6b21a8; }
-    .tagline-preview {
-      font-size: .78rem; color: var(--muted); font-style: italic;
-      max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    }
-    .chevron {
-      width: 20px; height: 20px; flex-shrink: 0; color: var(--muted);
-      transition: transform .2s;
-    }
-    .site-card.open .chevron { transform: rotate(180deg); }
-
-    /* ── Card body ── */
-    .card-body { display: none; padding: 1.2rem 1.2rem 1.4rem; }
-    .site-card.open .card-body { display: block; }
-
-    .field-group { margin-bottom: 1.1rem; }
-    .field-label {
-      display: block; font-size: .72rem; font-weight: 700;
-      text-transform: uppercase; letter-spacing: .06em;
-      color: var(--muted); margin-bottom: .35rem;
-    }
-    .field-label .ai-tag {
-      background: #fef3c7; color: #92400e;
-      font-size: .62rem; font-weight: 700; padding: .1rem .35rem;
-      border-radius: 99px; margin-left: .4rem; text-transform: none; letter-spacing: 0;
-    }
-    input.field-input, textarea.field-input {
-      width: 100%; padding: .55rem .75rem;
-      border: 1.5px solid var(--border); border-radius: 8px;
-      font-size: .87rem; font-family: inherit; color: #111827;
-      background: #fafbfc; resize: vertical;
-      transition: border-color .2s, background .2s;
-    }
-    input.field-input:focus, textarea.field-input:focus {
-      outline: none; border-color: var(--accent); background: #fff;
+    .progress-msg {
+      font-size: .9rem;
+      color: var(--muted);
+      min-height: 1.3em;
     }
 
-    .desc-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: .75rem; }
-    @media (max-width: 640px) { .desc-grid { grid-template-columns: 1fr; } }
+    /* ── Done view ── */
+    #view-done { display: none; }
+    .done-icon { font-size: 3rem; text-align: center; margin-bottom: .8rem; }
+    .done-title { font-size: 1.25rem; font-weight: 700; text-align: center; color: var(--brand); margin-bottom: .4rem; }
+    .done-sub   { text-align: center; color: var(--muted); font-size: .9rem; margin-bottom: 1.6rem; }
 
-    .lm-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: .75rem; }
-    @media (max-width: 640px) { .lm-grid { grid-template-columns: 1fr; } }
+    .btn-download {
+      display: flex; align-items: center; justify-content: center; gap: .5rem;
+      width: 100%; padding: .85rem 1.5rem;
+      background: var(--green); color: #fff;
+      border: none; border-radius: 8px;
+      font-size: 1rem; font-weight: 600;
+      cursor: pointer; text-decoration: none;
+      transition: opacity .2s;
+    }
+    .btn-download:hover { opacity: .9; }
 
-    .stats-row {
-      display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .5rem;
+    .btn-again {
+      display: block; text-align: center;
+      margin-top: 1rem;
+      font-size: .9rem; color: var(--muted);
+      cursor: pointer; text-decoration: underline;
+      background: none; border: none;
     }
-    .stat-chip {
-      font-size: .75rem; padding: .25rem .6rem;
-      background: #f3f4f8; border-radius: 6px; color: #374151;
-    }
-    .stat-chip strong { color: var(--brand); }
+    .btn-again:hover { color: var(--brand); }
 
-    /* ── Map thumbnail ── */
-    .map-wrap {
-      margin-top: 1.1rem;
-      border-radius: 8px; overflow: hidden;
-      border: 1.5px solid var(--border);
-      background: #f3f4f8;
-      position: relative;
+    /* ── Error ── */
+    .error-box {
+      background: #fff5f6;
+      border: 1px solid #fca5a5;
+      border-radius: 8px;
+      padding: .9rem 1rem;
+      font-size: .9rem;
+      color: #b91c1c;
+      margin-top: 1rem;
+      display: none;
     }
-    .map-wrap img {
-      display: block; width: 100%; height: 180px;
-      object-fit: cover; object-position: center;
-    }
-    .map-label {
-      position: absolute; bottom: 6px; left: 8px;
-      font-size: .65rem; font-weight: 700;
-      background: rgba(26,26,46,.75); color: #fff;
-      padding: .2rem .5rem; border-radius: 4px;
-      letter-spacing: .04em; text-transform: uppercase;
-    }
-    .map-no {
-      height: 44px; display: flex; align-items: center;
-      justify-content: center; gap: .4rem;
-      font-size: .75rem; color: var(--muted);
-    }
-
-    /* ── Build bar (bottom of plan view) ── */
-    .build-bar {
-      position: sticky; bottom: 0;
-      background: #fff;
-      border-top: 1.5px solid var(--border);
-      padding: 1rem 1.25rem;
-      margin-top: .5rem;
-      border-radius: 0 0 var(--radius) var(--radius);
-      display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
-    }
-    .build-bar .btn { flex: 1; min-width: 200px; margin-top: 0; }
-    .build-note { font-size: .78rem; color: var(--muted); flex-shrink: 0; }
-
-    /* ── Footer ── */
-    footer { margin-top: 3rem; font-size: .73rem; color: #9ca3af; text-align: center; }
   </style>
 </head>
 <body>
 
-  <header>
-    <div class="wordmark">Sky<span>scale</span></div>
-    <div class="subtitle">OOH Proposal Generator</div>
-  </header>
+<header>
+  <h1>OOH Proposal Generator</h1>
+  <p>Powered by Skyscale Media &amp; AI</p>
+</header>
 
-  <!-- Step indicator -->
-  <div class="steps" id="steps">
-    <div class="step active" id="s1"><div class="step-num">1</div> Upload</div>
-    <div class="step-sep"></div>
-    <div class="step" id="s2"><div class="step-num">2</div> Review Plan</div>
-    <div class="step-sep"></div>
-    <div class="step" id="s3"><div class="step-num">3</div> Build PPTX</div>
+<!-- ── Upload ── -->
+<div class="card" id="view-upload">
+  <div class="fields">
+    <div>
+      <div class="field-label">Excel file (site data)</div>
+      <div class="drop-zone" id="zone-excel">
+        <input type="file" accept=".xlsx,.xls" id="input-excel" />
+        <div class="icon">📊</div>
+        <div class="label">Drag &amp; drop or click to select</div>
+        <div class="filename" id="name-excel"></div>
+      </div>
+    </div>
+    <div>
+      <div class="field-label">PowerPoint template</div>
+      <div class="drop-zone" id="zone-pptx">
+        <input type="file" accept=".pptx" id="input-pptx" />
+        <div class="icon">📐</div>
+        <div class="label">Drag &amp; drop or click to select</div>
+        <div class="filename" id="name-pptx"></div>
+      </div>
+    </div>
   </div>
 
-  <!-- ═══ VIEW 1: UPLOAD ═══ -->
-  <div class="card" id="view-upload">
+  <button class="btn" id="btn-generate" disabled>
+    ⚡ Generate Proposal
+  </button>
+  <div class="error-box" id="upload-error"></div>
+</div>
 
-    <div class="upload-grid">
-      <div class="upload-zone" id="zone-excel">
-        <input type="file" id="input-excel" accept=".xlsx,.xls" />
-        <span class="upload-icon">📊</span>
-        <span class="upload-label">Site Data</span>
-        <span class="upload-hint">Excel (.xlsx / .xls)</span>
-        <div class="upload-filename" id="name-excel"></div>
-      </div>
-      <div class="upload-zone" id="zone-pptx">
-        <input type="file" id="input-pptx" accept=".pptx" />
-        <span class="upload-icon">📐</span>
-        <span class="upload-label">PPTX Template</span>
-        <span class="upload-hint">PowerPoint (.pptx)</span>
-        <div class="upload-filename" id="name-pptx"></div>
-      </div>
-    </div>
+<!-- ── Progress ── -->
+<div class="card" id="view-progress">
+  <div class="phase-label" id="phase-label">
+    <span class="spinner"></span>
+    <span id="phase-text">Preparing…</span>
+  </div>
+  <div class="progress-track">
+    <div class="progress-fill" id="progress-fill"></div>
+  </div>
+  <div class="progress-msg" id="progress-msg">Starting…</div>
+  <div class="error-box" id="build-error"></div>
+</div>
 
-    <button class="btn" id="btn-plan" disabled>Generate Content Plan →</button>
+<!-- ── Done ── -->
+<div class="card" id="view-done">
+  <div class="done-icon">✅</div>
+  <div class="done-title">Proposal Ready!</div>
+  <div class="done-sub" id="done-sub">Your PPTX file with Google Maps screenshots is ready.</div>
+  <a class="btn-download" id="btn-download" href="#">
+    ⬇ Download PPTX
+  </a>
+  <button class="btn-again" id="btn-again">Generate another proposal</button>
+</div>
 
-    <div class="progress-wrap" id="upload-progress" style="display:none">
-      <div class="progress-track"><div class="progress-fill" id="upload-fill"></div></div>
-      <div class="status-row" id="upload-status">
-        <div class="spinner"></div>
-        <span id="upload-msg">Starting…</span>
-      </div>
-    </div>
+<script>
+  // ── State ──
+  let jobId = null;
+  let pollTimer = null;
 
-  </div><!-- /view-upload -->
-
-
-  <!-- ═══ VIEW 2: PLAN REVIEW ═══ -->
-  <div id="view-plan">
-
-    <div class="plan-header">
-      <div>
-        <div class="plan-title" id="plan-title">Content Plan</div>
-        <div class="plan-subtitle" id="plan-subtitle">Review and edit AI-generated content before building the deck.</div>
-      </div>
-      <div class="plan-actions">
-        <button class="link-btn" id="btn-expand-all">Expand all</button>
-        <button class="link-btn" id="btn-collapse-all">Collapse all</button>
-      </div>
-    </div>
-
-    <div id="plan-cards"></div>
-
-    <!-- Sticky build bar -->
-    <div class="build-bar">
-      <span class="build-note" id="build-note">All edits are saved automatically.</span>
-      <button class="btn btn-green" id="btn-build">Build PPTX →</button>
-    </div>
-
-  </div><!-- /view-plan -->
-
-
-  <!-- ═══ VIEW 3: BUILD / DONE ═══ -->
-  <div class="card" id="view-build" style="display:none">
-
-    <div class="progress-wrap">
-      <div class="progress-track"><div class="progress-fill" id="build-fill"></div></div>
-      <div class="status-row" id="build-status">
-        <div class="spinner" id="build-spinner"></div>
-        <span id="build-msg">Starting…</span>
-      </div>
-    </div>
-
-    <a class="btn-dl" id="btn-download" href="#" download="OOH_Proposal.pptx">
-      ⬇ Download OOH_Proposal.pptx
-    </a>
-
-    <button class="btn btn-outline" id="btn-restart" style="display:none;margin-top:.75rem">
-      ← Start over
-    </button>
-
-  </div><!-- /view-build -->
-
-
-  <footer>Skyscale · Internal tools · Powered by Claude AI</footer>
-
-
-  <script>
-    // ── State ──────────────────────────────────────────────────────────────
-    let jobId      = null;
-    let pollTimer  = null;
-    let planPhase  = 'upload';   // 'upload' | 'planning' | 'reviewing' | 'building' | 'done'
-    const _siteData = {};        // stash of original plan data by card index
-
-    // ── Elements ──────────────────────────────────────────────────────────
-    const inputExcel   = document.getElementById('input-excel');
-    const inputPptx    = document.getElementById('input-pptx');
-    const zoneExcel    = document.getElementById('zone-excel');
-    const zonePptx     = document.getElementById('zone-pptx');
-    const nameExcel    = document.getElementById('name-excel');
-    const namePptx     = document.getElementById('name-pptx');
-
-    const btnPlan      = document.getElementById('btn-plan');
-    const uploadProgress = document.getElementById('upload-progress');
-    const uploadFill   = document.getElementById('upload-fill');
-    const uploadStatus = document.getElementById('upload-status');
-    const uploadMsg    = document.getElementById('upload-msg');
-
-    const viewUpload   = document.getElementById('view-upload');
-    const viewPlan     = document.getElementById('view-plan');
-    const viewBuild    = document.getElementById('view-build');
-
-    const planTitle    = document.getElementById('plan-title');
-    const planSubtitle = document.getElementById('plan-subtitle');
-    const planCards    = document.getElementById('plan-cards');
-    const buildNote    = document.getElementById('build-note');
-    const btnBuild     = document.getElementById('btn-build');
-    const btnExpandAll = document.getElementById('btn-expand-all');
-    const btnCollapseAll = document.getElementById('btn-collapse-all');
-
-    const buildFill    = document.getElementById('build-fill');
-    const buildStatus  = document.getElementById('build-status');
-    const buildSpinner = document.getElementById('build-spinner');
-    const buildMsg     = document.getElementById('build-msg');
-    const btnDownload  = document.getElementById('btn-download');
-    const btnRestart   = document.getElementById('btn-restart');
-
-    const steps = [
-      document.getElementById('s1'),
-      document.getElementById('s2'),
-      document.getElementById('s3'),
-    ];
-
-    // ── Step indicator ─────────────────────────────────────────────────────
-    function setStep(active) {
-      steps.forEach((s, i) => {
-        s.className = 'step' + (i < active - 1 ? ' done' : i === active - 1 ? ' active' : '');
-      });
-    }
-
-    // ── File upload zones ──────────────────────────────────────────────────
-    function setupZone(input, zone, nameEl) {
-      input.addEventListener('change', () => {
-        zone.classList.toggle('has-file', !!input.files[0]);
-        nameEl.textContent = input.files[0] ? input.files[0].name : '';
-        checkReady();
-      });
-      zone.addEventListener('dragover',  e => { e.preventDefault(); zone.classList.add('drag-over'); });
-      zone.addEventListener('dragleave', ()  => zone.classList.remove('drag-over'));
-      zone.addEventListener('drop', e => {
-        e.preventDefault(); zone.classList.remove('drag-over');
-        if (e.dataTransfer.files[0]) {
-          input.files = e.dataTransfer.files;
-          input.dispatchEvent(new Event('change'));
-        }
-      });
-    }
-    setupZone(inputExcel, zoneExcel, nameExcel);
-    setupZone(inputPptx,  zonePptx,  namePptx);
-
-    function checkReady() {
-      btnPlan.disabled = !(inputExcel.files[0] && inputPptx.files[0]);
-    }
-
-    // ── Polling ─────────────────────────────────────────────────────────────
-    function clearPoll() { if (pollTimer) clearTimeout(pollTimer); pollTimer = null; }
-
-    function poll(onData) {
-      clearPoll();
-      const tick = () => {
-        fetch('/api/status/' + jobId)
-          .then(r => r.json())
-          .then(data => { onData(data); })
-          .catch(() => { pollTimer = setTimeout(tick, 2000); });
-      };
-      tick();
-    }
-
-    // ── Phase 1: generate plan ──────────────────────────────────────────────
-    btnPlan.addEventListener('click', () => {
-      if (!inputExcel.files[0] || !inputPptx.files[0]) return;
-      btnPlan.disabled = true;
-      uploadProgress.style.display = 'block';
-      setUploadStatus('Uploading files…', 2);
-
-      const form = new FormData();
-      form.append('excel',    inputExcel.files[0]);
-      form.append('template', inputPptx.files[0]);
-
-      fetch('/api/plan', { method: 'POST', body: form })
-        .then(r => r.json())
-        .then(data => {
-          if (data.error) { setUploadStatus('Error: ' + data.error, 0, 'error'); btnPlan.disabled = false; return; }
-          jobId = data.job_id;
-          planPhase = 'planning';
-          pollPlanGeneration();
-        })
-        .catch(() => { setUploadStatus('Upload failed.', 0, 'error'); btnPlan.disabled = false; });
+  // ── Helpers ──
+  function show(id) {
+    ['view-upload', 'view-progress', 'view-done'].forEach(v => {
+      document.getElementById(v).style.display = v === id ? 'block' : 'none';
     });
+  }
 
-    function setUploadStatus(msg, pct, type = 'processing') {
-      uploadMsg.textContent = msg;
-      uploadFill.style.width = pct + '%';
-      uploadStatus.className = 'status-row ' + type;
+  function setProgress(pct, msg) {
+    document.getElementById('progress-fill').style.width = pct + '%';
+    document.getElementById('progress-msg').textContent = msg;
+  }
+
+  function setPhase(text) {
+    document.getElementById('phase-text').textContent = text;
+  }
+
+  function showError(boxId, msg) {
+    const el = document.getElementById(boxId);
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+
+  // ── File drop zones ──
+  function wireDropZone(zoneId, inputId, nameId) {
+    const zone  = document.getElementById(zoneId);
+    const input = document.getElementById(inputId);
+    const name  = document.getElementById(nameId);
+
+    zone.addEventListener('dragover',  e => { e.preventDefault(); zone.classList.add('dragover'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+    zone.addEventListener('drop', e => {
+      e.preventDefault();
+      zone.classList.remove('dragover');
+      const f = e.dataTransfer.files[0];
+      if (f) { input.files = e.dataTransfer.files; name.textContent = f.name; checkReady(); }
+    });
+    input.addEventListener('change', () => {
+      if (input.files[0]) { name.textContent = input.files[0].name; checkReady(); }
+    });
+  }
+
+  wireDropZone('zone-excel', 'input-excel', 'name-excel');
+  wireDropZone('zone-pptx',  'input-pptx',  'name-pptx');
+
+  function checkReady() {
+    const excelOk = !!document.getElementById('input-excel').files[0];
+    const pptxOk  = !!document.getElementById('input-pptx').files[0];
+    document.getElementById('btn-generate').disabled = !(excelOk && pptxOk);
+  }
+
+  // ── Generate ──
+  document.getElementById('btn-generate').addEventListener('click', async () => {
+    const excel = document.getElementById('input-excel').files[0];
+    const pptx  = document.getElementById('input-pptx').files[0];
+    if (!excel || !pptx) return;
+
+    document.getElementById('upload-error').style.display = 'none';
+    document.getElementById('btn-generate').disabled = true;
+
+    const form = new FormData();
+    form.append('excel',    excel);
+    form.append('template', pptx);
+
+    show('view-progress');
+    setPhase('Researching sites…');
+    setProgress(0, 'Uploading files…');
+
+    try {
+      const res  = await fetch('/api/plan', { method: 'POST', body: form });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      jobId = data.job_id;
+      pollPlan();
+    } catch (err) {
+      show('view-upload');
+      document.getElementById('btn-generate').disabled = false;
+      showError('upload-error', 'Upload failed: ' + err.message);
     }
+  });
 
-    function pollPlanGeneration() {
-      poll(data => {
+  // ── Poll plan phase ──
+  function pollPlan() {
+    clearTimeout(pollTimer);
+    pollTimer = setTimeout(async () => {
+      try {
+        const res  = await fetch('/api/status/' + jobId);
+        const data = await res.json();
+
         if (data.status === 'planning') {
-          setUploadStatus(data.message, data.progress);
-          pollTimer = setTimeout(() => pollPlanGeneration(), 1500);
+          setPhase('Researching sites & fetching maps…');
+          setProgress(Math.min(data.progress, 50), data.message);
+          pollPlan();
+
         } else if (data.status === 'plan_ready') {
-          clearPoll();
-          showPlanView(data.plan);
+          // Auto-build immediately — no review step
+          setPhase('Building PPTX…');
+          setProgress(52, 'Starting build…');
+          await startBuild(data.plan);
+
         } else if (data.status === 'error') {
-          setUploadStatus(data.message, 0, 'error');
-          btnPlan.disabled = false;
+          showError('build-error', data.message);
+
         } else {
-          pollTimer = setTimeout(() => pollPlanGeneration(), 1500);
+          // Unexpected status
+          pollPlan();
         }
-      });
-    }
-
-    // ── Plan view rendering ─────────────────────────────────────────────────
-    function showPlanView(plan) {
-      // Stash original read-only data so gatherPlanFromDOM can include it
-      plan.forEach((s, i) => { _siteData[i] = s; });
-
-      planPhase = 'reviewing';
-      setStep(2);
-      viewUpload.style.display = 'none';
-      viewPlan.style.display   = 'block';
-      planTitle.textContent    = `Content Plan — ${plan.length} site${plan.length !== 1 ? 's' : ''}`;
-      planCards.innerHTML      = '';
-      plan.forEach((site, idx) => planCards.appendChild(buildCard(site, idx)));
-      // Expand first card by default
-      const first = planCards.querySelector('.site-card');
-      if (first) first.classList.add('open');
-    }
-
-    function esc(s) {
-      return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-    }
-
-    function buildCard(site, idx) {
-      const card = document.createElement('div');
-      card.className = 'site-card';
-      card.dataset.idx = idx;
-
-      const mktBadge = site.market ? `<span class="badge badge-mkt">${esc(site.market)}</span>` : '';
-      const fmtBadge = site.format ? `<span class="badge badge-fmt">${esc(site.format)}</span>` : '';
-
-      card.innerHTML = `
-        <div class="card-header" tabindex="0" role="button" aria-expanded="false">
-          <div class="card-num">${idx + 1}</div>
-          <div class="card-meta">
-            <div class="card-name">${esc(site.site_name)}</div>
-            <div class="card-badges">${mktBadge}${fmtBadge}</div>
-          </div>
-          <div class="tagline-preview" id="preview-${idx}">${esc(site.tagline)}</div>
-          <svg class="chevron" viewBox="0 0 20 20" fill="currentColor">
-            <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/>
-          </svg>
-        </div>
-
-        <div class="card-body">
-
-          <!-- Tagline -->
-          <div class="field-group">
-            <label class="field-label">Tagline <span class="ai-tag">AI</span></label>
-            <input type="text" class="field-input" data-site="${idx}" data-field="tagline"
-                   value="${esc(site.tagline)}" placeholder="Short punchy tagline…" />
-          </div>
-
-          <!-- Descriptions -->
-          <div class="field-group">
-            <label class="field-label">Descriptions <span class="ai-tag">AI</span></label>
-            <div class="desc-grid">
-              <div>
-                <div class="field-label" style="margin-bottom:.25rem">Location</div>
-                <textarea class="field-input" rows="5" data-site="${idx}" data-field="location_desc"
-                          placeholder="Location description…">${esc(site.location_desc)}</textarea>
-              </div>
-              <div>
-                <div class="field-label" style="margin-bottom:.25rem">Visibility</div>
-                <textarea class="field-input" rows="5" data-site="${idx}" data-field="visibility_desc"
-                          placeholder="Visibility description…">${esc(site.visibility_desc)}</textarea>
-              </div>
-              <div>
-                <div class="field-label" style="margin-bottom:.25rem">Audience</div>
-                <textarea class="field-input" rows="5" data-site="${idx}" data-field="audience_desc"
-                          placeholder="Audience description…">${esc(site.audience_desc)}</textarea>
-              </div>
-            </div>
-          </div>
-
-          <!-- Landmarks -->
-          <div class="field-group">
-            <label class="field-label">Nearby Landmarks <span class="ai-tag">AI + Map</span></label>
-            <div class="lm-grid">
-              <input type="text" class="field-input" data-site="${idx}" data-field="landmark_1"
-                     value="${esc(site.landmark_1)}" placeholder="Landmark – X.Xkm" />
-              <input type="text" class="field-input" data-site="${idx}" data-field="landmark_2"
-                     value="${esc(site.landmark_2)}" placeholder="Landmark – X.Xkm" />
-              <input type="text" class="field-input" data-site="${idx}" data-field="landmark_3"
-                     value="${esc(site.landmark_3)}" placeholder="Landmark – X.Xkm" />
-            </div>
-          </div>
-
-          <!-- Site data (read-only) -->
-          <div class="field-group">
-            <label class="field-label">Site Data <span style="font-size:.62rem;color:#9ca3af;text-transform:none;letter-spacing:0;font-weight:400">(from Excel)</span></label>
-            <div class="stats-row">
-              ${site.size      ? `<span class="stat-chip"><strong>Size</strong> ${esc(site.size)}</span>` : ''}
-              ${site.format    ? `<span class="stat-chip"><strong>Format</strong> ${esc(site.format)}</span>` : ''}
-              ${site.units     ? `<span class="stat-chip"><strong>Units</strong> ${esc(site.units)}</span>` : ''}
-              ${site.frequency ? `<span class="stat-chip"><strong>Freq</strong> ${esc(site.frequency)}</span>` : ''}
-              ${site.traffic   ? `<span class="stat-chip"><strong>Traffic</strong> ${esc(site.traffic)}</span>` : ''}
-              ${site.location  ? `<span class="stat-chip"><strong>Loc</strong> ${esc(site.location)}</span>` : ''}
-            </div>
-          </div>
-
-          <!-- Google Maps screenshot -->
-          <div class="field-group" style="margin-bottom:0">
-            <label class="field-label">Google Maps Screenshot <span class="ai-tag">Map</span></label>
-            ${site.has_map
-              ? `<div class="map-wrap">
-                   <img src="/api/map/${jobId}/${idx}" alt="Map for ${esc(site.site_name)}"
-                        onerror="this.closest('.map-wrap').innerHTML='<div class=\\'map-no\\'>Map image unavailable</div>'" />
-                   <span class="map-label">📍 ${esc(site.location || site.market)}</span>
-                 </div>`
-              : `<div class="map-wrap"><div class="map-no">⚠️ No GOOGLE_MAPS_API_KEY set — map not captured</div></div>`
-            }
-          </div>
-
-        </div><!-- /card-body -->
-      `;
-
-      // Toggle expand/collapse
-      const header = card.querySelector('.card-header');
-      header.addEventListener('click', () => toggleCard(card));
-      header.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleCard(card); } });
-
-      // Update tagline preview on input
-      const taglineInput = card.querySelector(`[data-field="tagline"]`);
-      taglineInput.addEventListener('input', () => {
-        document.getElementById('preview-' + idx).textContent = taglineInput.value;
-      });
-
-      return card;
-    }
-
-    function toggleCard(card) {
-      const isOpen = card.classList.toggle('open');
-      card.querySelector('.card-header').setAttribute('aria-expanded', isOpen);
-    }
-
-    btnExpandAll.addEventListener('click', () => {
-      planCards.querySelectorAll('.site-card').forEach(c => {
-        c.classList.add('open');
-        c.querySelector('.card-header').setAttribute('aria-expanded', 'true');
-      });
-    });
-    btnCollapseAll.addEventListener('click', () => {
-      planCards.querySelectorAll('.site-card').forEach(c => {
-        c.classList.remove('open');
-        c.querySelector('.card-header').setAttribute('aria-expanded', 'false');
-      });
-    });
-
-    // ── Build PPTX ────────────────────────────────────────────────────────────
-    btnBuild.addEventListener('click', () => {
-      btnBuild.disabled = true;
-      buildNote.textContent = 'Collecting plan…';
-
-      // Collect plan from DOM fields
-      const plan = gatherPlanFromDOM();
-
-      if (!plan.length) {
-        alert('No site data found. Please re-upload your files.');
-        btnBuild.disabled = false;
-        return;
+      } catch (err) {
+        showError('build-error', 'Connection error: ' + err.message);
       }
+    }, 1500);
+  }
 
-      // Switch to build view
-      setStep(3);
-      viewPlan.style.display  = 'none';
-      viewBuild.style.display = 'block';
-      planPhase = 'building';
-
-      setBuildStatus('Sending plan to server…', 2);
-
-      fetch('/api/build', {
+  // ── Trigger build ──
+  async function startBuild(plan) {
+    try {
+      const res  = await fetch('/api/build', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ job_id: jobId, plan }),
-      })
-        .then(r => r.json())
-        .then(data => {
-          if (data.error) { setBuildStatus('Error: ' + data.error, 0, 'error'); btnBuild.disabled = false; return; }
-          pollBuild();
-        })
-        .catch(() => { setBuildStatus('Request failed. Please try again.', 0, 'error'); btnBuild.disabled = false; });
-    });
-
-    function gatherPlanFromDOM() {
-      // Read all editable inputs from the plan cards
-      // and merge with the stashed read-only data
-      const cards = planCards.querySelectorAll('.site-card');
-      const plan  = [];
-      cards.forEach(card => {
-        const site = Object.assign({}, _siteData[parseInt(card.dataset.idx)]);
-        card.querySelectorAll('[data-site][data-field]').forEach(el => {
-          site[el.dataset.field] = el.value !== undefined ? el.value : el.textContent;
-        });
-        plan.push(site);
       });
-      return plan;
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      pollBuild();
+    } catch (err) {
+      showError('build-error', 'Build failed: ' + err.message);
     }
+  }
 
-    function pollBuild() {
-      clearPoll();
-      const tick = () => {
-        fetch('/api/status/' + jobId)
-          .then(r => r.json())
-          .then(data => {
-            setBuildStatus(data.message, data.progress, data.status);
-            if (data.status === 'done') {
-              buildFill.classList.add('done');
-              buildSpinner.style.display = 'none';
-              btnDownload.href  = '/api/download/' + jobId;
-              btnDownload.style.display = 'block';
-              btnRestart.style.display = 'block';
-            } else if (data.status === 'error') {
-              buildSpinner.style.display = 'none';
-              btnRestart.style.display = 'block';
-            } else {
-              pollTimer = setTimeout(tick, 1500);
-            }
-          })
-          .catch(() => { pollTimer = setTimeout(tick, 2000); });
-      };
-      tick();
-    }
+  // ── Poll build phase ──
+  function pollBuild() {
+    clearTimeout(pollTimer);
+    pollTimer = setTimeout(async () => {
+      try {
+        const res  = await fetch('/api/status/' + jobId);
+        const data = await res.json();
 
-    function setBuildStatus(msg, pct, type = 'processing') {
-      buildMsg.textContent = msg;
-      buildFill.style.width = pct + '%';
-      buildStatus.className = 'status-row ' + type;
-    }
+        if (data.status === 'building') {
+          const pct = 52 + Math.round((data.progress / 100) * 46);
+          setProgress(pct, data.message);
+          pollBuild();
 
-    // ── Restart ──────────────────────────────────────────────────────────────
-    btnRestart.addEventListener('click', () => {
-      clearPoll();
-      jobId = null;
-      planPhase = 'upload';
-      setStep(1);
+        } else if (data.status === 'done') {
+          setProgress(100, 'Complete!');
+          setTimeout(() => showDone(data.output), 400);
 
-      // Reset upload view
-      [inputExcel, inputPptx].forEach(i => { i.value = ''; });
-      [zoneExcel, zonePptx].forEach(z => z.classList.remove('has-file'));
-      [nameExcel, namePptx].forEach(n => { n.textContent = ''; });
-      btnPlan.disabled = true;
-      uploadProgress.style.display = 'none';
-      uploadFill.style.width = '0%';
+        } else if (data.status === 'error') {
+          showError('build-error', data.message);
 
-      // Reset build view
-      buildFill.style.width = '0%';
-      buildFill.classList.remove('done');
-      buildSpinner.style.display = 'block';
-      btnDownload.style.display = 'none';
-      btnDownload.href = '#';
-      btnRestart.style.display = 'none';
-      btnBuild.disabled = false;
-      buildNote.textContent = 'All edits are saved automatically.';
+        } else {
+          pollBuild();
+        }
+      } catch (err) {
+        showError('build-error', 'Connection error: ' + err.message);
+      }
+    }, 1500);
+  }
 
-      // Reset plan view
-      planCards.innerHTML = '';
-      Object.keys(_siteData).forEach(k => delete _siteData[k]);
+  // ── Done ──
+  function showDone(outputFilename) {
+    show('view-done');
+    document.getElementById('btn-download').href = '/api/download/' + jobId;
+  }
 
-      // Show upload
-      viewBuild.style.display = 'none';
-      viewPlan.style.display  = 'none';
-      viewUpload.style.display = 'block';
-    });
-  </script>
+  // ── Start over ──
+  document.getElementById('btn-again').addEventListener('click', () => {
+    jobId = null;
+    clearTimeout(pollTimer);
+    document.getElementById('input-excel').value = '';
+    document.getElementById('input-pptx').value  = '';
+    document.getElementById('name-excel').textContent = '';
+    document.getElementById('name-pptx').textContent  = '';
+    document.getElementById('btn-generate').disabled = true;
+    document.getElementById('upload-error').style.display = 'none';
+    document.getElementById('build-error').style.display  = 'none';
+    setProgress(0, '');
+    show('view-upload');
+  });
+
+  // Init
+  show('view-upload');
+</script>
 </body>
 </html>
