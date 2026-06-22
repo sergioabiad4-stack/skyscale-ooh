@@ -18,7 +18,6 @@ from pptx.util import Inches
 from pptx.oxml.ns import qn
 from lxml import etree
 import anthropic
-from json_repair import repair_json
 
 # ---------------------------------------------------------------------------
 # App setup
@@ -403,10 +402,18 @@ Return ONLY valid JSON (no markdown fences, no extra text) with exactly these ke
     raw = response.content[0].text.strip()
     raw = re.sub(r"^```[a-z]*\n?", "", raw)
     raw = re.sub(r"\n?```$", "", raw)
-    result = repair_json(raw.strip(), return_objects=True)
-    if not isinstance(result, dict):
-        raise ValueError(f"AI returned non-dict JSON: {raw[:200]}")
-    return result
+    text = raw.strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        # Extract the outermost {...} block and retry
+        m = re.search(r'\{[\s\S]*\}', text)
+        if m:
+            try:
+                return json.loads(m.group())
+            except json.JSONDecodeError:
+                pass
+        raise ValueError(f"AI returned invalid JSON: {text[:200]}")
 
 
 # ---------------------------------------------------------------------------
