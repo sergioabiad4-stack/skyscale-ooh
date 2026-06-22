@@ -598,13 +598,13 @@ def generate_plan_job(job_id: str, excel_path: Path):
             except Exception as ai_err:
                 print(f"[WARN] AI failed for site {site_name!r}: {ai_err}")
                 ai = {
-                    "tagline":         site_name,
-                    "location_desc":   f"Located in {market}.",
-                    "visibility_desc": "High-visibility advertising format with strong sightlines.",
-                    "audience_desc":   "Reaches a broad audience of commuters and local shoppers.",
-                    "landmark_1":      "City Centre – 1.0km",
-                    "landmark_2":      "Main Transport Hub – 1.5km",
-                    "landmark_3":      "Business District – 2.0km",
+                    "tagline":         "",
+                    "location_desc":   "",
+                    "visibility_desc": "",
+                    "audience_desc":   "",
+                    "landmark_1":      "",
+                    "landmark_2":      "",
+                    "landmark_3":      "",
                 }
 
             # Fetch Google Maps screenshot

@@ -253,6 +253,8 @@
   // ── State ──
   let jobId = null;
   let pollTimer = null;
+  let netErrors = 0;
+  const MAX_NET_ERRORS = 12; // keep retrying for ~36s of connection issues
 
   // ── Helpers ──
   function show(id) {
@@ -341,6 +343,7 @@
       try {
         const res  = await fetch('/api/status/' + jobId);
         const data = await res.json();
+        netErrors = 0;
 
         if (data.status === 'planning') {
           setPhase('Researching sites & fetching maps…');
@@ -348,7 +351,6 @@
           pollPlan();
 
         } else if (data.status === 'plan_ready') {
-          // Auto-build immediately — no review step
           setPhase('Building PPTX…');
           setProgress(52, 'Starting build…');
           await startBuild(data.plan);
@@ -357,13 +359,18 @@
           showError('build-error', data.message);
 
         } else {
-          // Unexpected status
           pollPlan();
         }
-      } catch (err) {
-        showError('build-error', 'Connection error: ' + err.message);
+      } catch (_) {
+        netErrors++;
+        if (netErrors < MAX_NET_ERRORS) {
+          document.getElementById('progress-msg').textContent = 'Reconnecting… (' + netErrors + ')';
+          pollPlan();
+        } else {
+          showError('build-error', 'Lost connection to server. Please refresh and try again.');
+        }
       }
-    }, 1500);
+    }, netErrors > 0 ? 3000 : 1500);
   }
 
   // ── Trigger build ──
@@ -389,6 +396,7 @@
       try {
         const res  = await fetch('/api/status/' + jobId);
         const data = await res.json();
+        netErrors = 0;
 
         if (data.status === 'building') {
           const pct = 52 + Math.round((data.progress / 100) * 46);
@@ -405,10 +413,16 @@
         } else {
           pollBuild();
         }
-      } catch (err) {
-        showError('build-error', 'Connection error: ' + err.message);
+      } catch (_) {
+        netErrors++;
+        if (netErrors < MAX_NET_ERRORS) {
+          document.getElementById('progress-msg').textContent = 'Reconnecting… (' + netErrors + ')';
+          pollBuild();
+        } else {
+          showError('build-error', 'Lost connection to server. Please refresh and try again.');
+        }
       }
-    }, 1500);
+    }, netErrors > 0 ? 3000 : 1500);
   }
 
   // ── Done ──
