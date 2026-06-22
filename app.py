@@ -251,44 +251,106 @@ MAP_IMG_WIDTH  = Inches(3.10)   # image width
 MAP_IMG_HEIGHT = Inches(2.10)   # image height
 
 
+def _osm_tile_coords(lat: float, lng: float, zoom: int) -> tuple[int, int]:
+    """Convert lat/lng to OSM tile x/y."""
+    n   = 2 ** zoom
+    x   = int((lng + 180) / 360 * n)
+    lat_r = math.radians(lat)
+    y   = int((1 - math.log(math.tan(lat_r) + 1 / math.cos(lat_r)) / math.pi) / 2 * n)
+    return x, y
+
+
+def _map_via_osm(lat: float, lng: float, zoom: int = 15) -> bytes | None:
+    """
+    Build a 768×512 map image from free OpenStreetMap tiles with a red pin.
+    Requires Pillow.
+    """
+    try:
+        import io as _io
+        from PIL import Image, ImageDraw
+
+        TILE_PX = 256
+        COLS, ROWS = 3, 2          # 768 × 512 px canvas
+        tx, ty = _osm_tile_coords(lat, lng, zoom)
+
+        canvas = Image.new("RGB", (TILE_PX * COLS, TILE_PX * ROWS), (220, 220, 220))
+        UA = "OOHProposalGenerator/1.0 (skyscalemedia.com)"
+
+        for row in range(ROWS):
+            for col in range(COLS):
+                url = f"https://tile.openstreetmap.org/{zoom}/{tx - 1 + col}/{ty + row - ROWS // 2}.png"
+                try:
+                    r = requests.get(url, headers={"User-Agent": UA}, timeout=6)
+                    if r.status_code == 200:
+                        tile = Image.open(_io.BytesIO(r.content)).convert("RGB")
+                        canvas.paste(tile, (col * TILE_PX, row * TILE_PX))
+                except Exception:
+                    pass
+
+        # Red pin at centre of canvas
+        draw = ImageDraw.Draw(canvas)
+        cx, cy = canvas.width // 2, canvas.height // 2
+        for radius, colour in [(12, "red"), (6, "darkred"), (3, "white")]:
+            draw.ellipse([cx - radius, cy - radius, cx + radius, cy + radius], fill=colour)
+
+        buf = _io.BytesIO()
+        canvas.save(buf, format="PNG")
+        return buf.getvalue()
+    except Exception:
+        return None
+
+
 def get_map_image_bytes(location: str, city: str, zoom: int = 16) -> bytes | None:
     """
-    Fetch a Google Maps Static API image (600×400 px @2x) for a location.
-    Returns raw PNG/JPEG bytes, or None if unavailable.
+    Return a map image for the location.
+    Uses Google Maps Static API when GOOGLE_MAPS_API_KEY is set,
+    otherwise falls back to free OpenStreetMap tiles.
     """
     api_key = os.environ.get("GOOGLE_MAPS_API_KEY", "")
-    if not api_key:
+
+    if api_key:
+        try:
+            geo = requests.get(
+                "https://maps.googleapis.com/maps/api/geocode/json",
+                params={"address": f"{location}, {city}", "key": api_key},
+                timeout=8,
+            ).json()
+            if geo.get("status") != "OK" or not geo.get("results"):
+                return None
+            loc = geo["results"][0]["geometry"]["location"]
+            lat, lng = loc["lat"], loc["lng"]
+            resp = requests.get(
+                "https://maps.googleapis.com/maps/api/staticmap",
+                params={
+                    "center": f"{lat},{lng}",
+                    "zoom": zoom,
+                    "size": "600x400",
+                    "scale": 2,
+                    "maptype": "roadmap",
+                    "markers": f"color:red|size:mid|{lat},{lng}",
+                    "key": api_key,
+                },
+                timeout=12,
+            )
+            ct = resp.headers.get("content-type", "")
+            if resp.status_code == 200 and ct.startswith("image"):
+                return resp.content
+        except Exception:
+            pass
         return None
+
+    # ── Free fallback: OpenStreetMap tiles ──
     try:
-        # Geocode address → lat/lng
         geo = requests.get(
-            "https://maps.googleapis.com/maps/api/geocode/json",
-            params={"address": f"{location}, {city}", "key": api_key},
+            "https://nominatim.openstreetmap.org/search",
+            params={"q": f"{location}, {city}", "format": "json", "limit": 1},
+            headers={"User-Agent": "OOHProposalGenerator/1.0 (skyscalemedia.com)"},
             timeout=8,
         ).json()
-        if geo.get("status") != "OK" or not geo.get("results"):
+        if not geo:
             return None
-        loc = geo["results"][0]["geometry"]["location"]
-        lat, lng = loc["lat"], loc["lng"]
-
-        # Fetch static map
-        resp = requests.get(
-            "https://maps.googleapis.com/maps/api/staticmap",
-            params={
-                "center": f"{lat},{lng}",
-                "zoom": zoom,
-                "size": "600x400",
-                "scale": 2,
-                "maptype": "roadmap",
-                "markers": f"color:red|size:mid|{lat},{lng}",
-                "key": api_key,
-            },
-            timeout=12,
-        )
-        ct = resp.headers.get("content-type", "")
-        if resp.status_code == 200 and ct.startswith("image"):
-            return resp.content
-        return None
+        lat, lng = float(geo[0]["lat"]), float(geo[0]["lon"])
+        return _map_via_osm(lat, lng, zoom=min(zoom, 15))
     except Exception:
         return None
 
