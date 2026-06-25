@@ -541,8 +541,8 @@ def build_pptx_from_plan(job_id: str, pptx_path: Path, plan: list):
                             MAP_IMG_LEFT, MAP_IMG_TOP,
                             MAP_IMG_WIDTH, MAP_IMG_HEIGHT,
                         )
-                    except Exception:
-                        pass  # never let a missing map crash the build
+                    except Exception as pic_err:
+                        print(f"[WARN] add_picture failed for slide {idx}: {pic_err}")
 
         update("building", "Saving output file…", 96)
         output_filename = f"OOH_Proposal_{job_id[:8]}.pptx"
