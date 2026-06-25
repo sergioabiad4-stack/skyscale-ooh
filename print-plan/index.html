@@ -135,8 +135,6 @@ tr.file-sep td{background:#f0f4f8 !important;font-size:10px;font-weight:700;colo
       </div>
     </div>
     <div id="xlsxErr" style="display:none;color:#dc2626;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:9px 14px;font-size:12px;margin-bottom:10px"></div>
-    <div class="det-label" id="srcLabel"></div>
-    <div class="src-list" id="srcList"></div>
     <div class="alert alert-warn" id="missAlert"></div>
     <div class="tbl-wrap">
       <table class="cn"><thead><tr id="cnHead"></tr></thead><tbody id="cnBody"></tbody></table>
@@ -278,14 +276,16 @@ function processFileRows(rawRows){
 }
 function buildOutputRows(f){
   const{datRows,fieldToCol,market}=f;let lastMkt='';
-  return datRows.map(row=>{
+  return datRows.reduce((acc,row)=>{
     const r={};
     for(const field of CN_FIELDS){const col=fieldToCol[field];r[field]=col>=0?(row[col]!=null?String(row[col]).trim():''):''}
     if(!r.market&&market)r.market=market;
     if(!r.market)r.market=lastMkt;else lastMkt=r.market;
     if(r.platform)r.platform=PLATFORM_MAP[r.platform.toLowerCase().trim()]||r.platform;
-    return r;
-  });
+    // Skip section-header rows (fewer than 2 non-market CN fields filled)
+    if(CN_FIELDS.filter(fld=>fld!=='market'&&r[fld]).length<2)return acc;
+    acc.push(r);return acc;
+  },[]);
 }
 
 // ── File list UI ──────────────────────────────────────────────────
@@ -337,17 +337,6 @@ function renderResult(){
     const ok=valid.some(f=>f.fieldToCol[field]>=0||(field==='market'&&f.market));
     const ch=document.createElement('span');ch.className='chip '+(ok?'chip-ok':'chip-miss');
     ch.textContent=(ok?'✓ ':'✗ ')+CN_LABELS[field];chipRow.appendChild(ch);
-  }
-
-  document.getElementById('srcLabel').textContent='Source columns by file — green = mapped to CN field:';
-  const srcList=document.getElementById('srcList');srcList.innerHTML='';
-  for(const f of valid){
-    const div=document.createElement('div');div.className='src-item';
-    const t=document.createElement('div');t.className='src-name';t.textContent=`${f.name} (${f.outputRows.length} rows)`;div.appendChild(t);
-    const chips=document.createElement('div');chips.className='hdr-chips';
-    f.datHeaders.forEach(h=>{if(!h&&!norm(h))return;const field=matchField(h);const ch=document.createElement('span');
-      ch.className='hdr-chip'+(field?' matched':'');ch.textContent=h+(field?' → '+CN_LABELS[field]:'');chips.appendChild(ch);});
-    div.appendChild(chips);srcList.appendChild(div);
   }
 
   const missing=CN_FIELDS.filter(field=>!valid.some(f=>f.fieldToCol[field]>=0||(field==='market'&&f.market)));
