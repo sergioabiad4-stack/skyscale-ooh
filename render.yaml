@@ -9,3 +9,8 @@ services:
         sync: false        # You'll paste the value in the Render dashboard
       - key: FLASK_DEBUG
         value: "0"
+
+  - type: web
+    name: cn-print-plan-filler
+    runtime: static
+    staticPublishPath: ./print-plan
