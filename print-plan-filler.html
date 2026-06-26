@@ -369,77 +369,89 @@ function xmlEsc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').r
 
 async function generateFilledXLSX(){
   const enc=new TextEncoder(),dec=new TextDecoder('utf-8');
+  const yield_=()=>new Promise(r=>setTimeout(r,0));
   const files=await unzip(tplBuffer);
 
-  // ── 1. Extract shared strings — keep original XML intact, just scan for lookups ──
+  showXlsxMsg('⏳ Reading template strings…',false);await yield_();
+
+  // ── 1. Shared strings ──
   const ssk=Object.keys(files).find(k=>k.toLowerCase().includes('sharedstrings'));
   let ssOrigXml='';
-  const strMap=new Map();   // text → index
+  const strMap=new Map();
   let nextSsIdx=0;
-  const newSsEntries=[];    // new strings not in original
-
+  const newSsEntries=[];
   if(ssk){
     ssOrigXml=dec.decode(files[ssk]);
     const xml=new DOMParser().parseFromString(ssOrigXml,'text/xml');
     for(const si of xml.querySelectorAll('si')){
       const t=si.textContent;
-      if(!strMap.has(t))strMap.set(t,nextSsIdx); // first occurrence wins
+      if(!strMap.has(t))strMap.set(t,nextSsIdx);
       nextSsIdx++;
     }
   }
-  // ssIdx: look up or register; new strings get appended at the end
   const ssIdx=val=>{
     if(strMap.has(val))return strMap.get(val);
-    const i=nextSsIdx++;
-    strMap.set(val,i);
-    newSsEntries.push(val);
-    return i;
+    const i=nextSsIdx++;strMap.set(val,i);newSsEntries.push(val);return i;
   };
 
-  // ── 2. Get worksheet XML as text ──
+  // ── 2. Get worksheet XML ──
   const sk=Object.keys(files).find(k=>/xl\/worksheets\/sheet1\.xml$/i.test(k))
          ||Object.keys(files).find(k=>/xl\/worksheets\/sheet\d+\.xml$/i.test(k));
-  if(!sk)throw new Error('Worksheet not found in template. Files: '+Object.keys(files).join(', '));
-  if(!files[sk])throw new Error('Worksheet XML empty — decompression may have failed');
+  if(!sk)throw new Error('Worksheet not found. Files: '+Object.keys(files).join(', '));
+  if(!files[sk])throw new Error('Worksheet XML empty');
   let wsText=dec.decode(files[sk]);
 
-  // ── 3. Remove rows 6+ (row 5 = headers, row 6+ = pre-filled example/data rows) ──
-  wsText=wsText.replace(/<row\s[^>]*\br="(\d+)"[^>]*>[\s\S]*?<\/row>/g,(m,r)=>+r>=6?'':m);
+  showXlsxMsg('⏳ Clearing template rows…',false);await yield_();
+
+  // ── 3. Remove rows 6+ — position-based slice (handles any row format reliably) ──
+  const sdEnd=wsText.indexOf('</sheetData>');
+  if(sdEnd>=0){
+    const pre=wsText.substring(0,sdEnd);
+    const re6=/<row\b[^>]*?\br="(\d+)"/g;
+    let firstGe6=-1,rm;
+    while((rm=re6.exec(pre))!==null){if(+rm[1]>=6){firstGe6=rm.index;break;}}
+    if(firstGe6>=0) wsText=wsText.slice(0,firstGe6)+'</sheetData>'+wsText.slice(sdEnd+12);
+  }
   wsText=wsText.replace(/<row\s[^>]*\br="(\d+)"[^>]*\/>/g,(m,r)=>+r>=6?'':m);
 
-  // ── 4. Build data rows starting at row 6 with correct template styles ──
+  // Remove merged-cell refs for rows >= 6 (prevents Excel repair warning)
+  wsText=wsText.replace(/<mergeCell\s+ref="[^"]*"\s*\/>/g,m=>{
+    const r1=(m.match(/ref="[A-Z]+(\d+):/)   ||[])[1];
+    const r2=(m.match(/:[A-Z]+(\d+)"/)        ||[])[1];
+    return ((r1&&+r1>=6)||(r2&&+r2>=6))?'':m;
+  });
+  wsText=wsText.replace(/<mergeCells[^/]*\/>/g,'');
+  wsText=wsText.replace(/<mergeCells[^>]*>\s*<\/mergeCells>/g,'');
+
+  showXlsxMsg('⏳ Mapping rows from rate cards…',false);await yield_();
+
+  // ── 4. Build data rows ──
   const valid=uploadedFiles.filter(f=>!f.error&&f.outputRows.length>0);
   const allRows=valid.flatMap(f=>f.outputRows);
 
-  // Cell styles from the blank template's pre-formatted rows:
-  // [styleWithValue, styleBlank] per CN column
   const CSTYLE=[
-    ['56','57'],  // A Market:    56=first of group, 57=blank continuation
-    ['68','69'],  // B Media:     68=value, 69=blank
-    ['68','69'],  // C Elements:  68=value, 69=blank
+    ['56','57'],  // A Market
+    ['68','69'],  // B Media
+    ['68','69'],  // C Elements
     ['16','16'],  // D Format
     ['18','18'],  // E Platform
     ['17','17'],  // F Unit Type
-    ['22','16'],  // G KPI's:     22=numeric, 16=text
+    ['22','16'],  // G KPI's
     ['23','23'],  // H Buy Type
     ['16','16'],  // I Net CPM
-    ['20','71'],  // J Net Total: 20=value, 71=blank
+    ['20','71'],  // J Net Total
   ];
-  // Border-only cells to maintain template grid lines (K=s15, L-R=s14)
   const BORDER_COLS='KLMNOPQR'.split('');
-
   let lastMkt='';
   const newRowsXml=allRows.map((r,i)=>{
     const rowNum=i+6;
     const mkt=r.market||'';
     const newGroup=mkt&&mkt!==lastMkt;
     if(mkt)lastMkt=mkt;
-
     const cells=CN_FIELDS.map((field,ci)=>{
       const val=r[field]||'';
       const ref=COL_LETTERS[ci]+rowNum;
       const[sV,sB]=CSTYLE[ci];
-
       if(field==='market'){
         if(newGroup&&val)return `<c r="${ref}" s="${sV}" t="s"><v>${ssIdx(val)}</v></c>`;
         return `<c r="${ref}" s="${sB}"/>`;
@@ -456,35 +468,36 @@ async function generateFilledXLSX(){
       }
       return `<c r="${ref}" s="${sV}" t="s"><v>${ssIdx(val)}</v></c>`;
     }).join('');
-
     const bCells=BORDER_COLS.map((c,j)=>`<c r="${c}${rowNum}" s="${j===0?'15':'14'}"/>`).join('');
     return `<row r="${rowNum}" spans="1:30" s="13" customFormat="1" x14ac:dyDescent="0.3">${cells}${bCells}</row>`;
   }).join('');
 
+  showXlsxMsg('⏳ Injecting '+allRows.length+' rows into template…',false);await yield_();
+
   // ── 5. Inject rows ──
   wsText=wsText.replace('</sheetData>',()=>newRowsXml+'</sheetData>');
   wsText=wsText.replace('<sheetData/>',()=>'<sheetData>'+newRowsXml+'</sheetData>');
-
   const lastRow=allRows.length+5;
-  wsText=wsText.replace(/(<dimension\s+ref=")[^"]*(")/,`$1A1:AD${lastRow}$2`);
-
+  wsText=wsText.replace(/(<dimension\s+ref=")[^"]*(")/,(_,a,b)=>a+'A1:AD'+lastRow+b);
   files[sk]=enc.encode(wsText);
 
-  // ── 6. Update sharedStrings — preserve original XML, only append new entries ──
+  showXlsxMsg('⏳ Updating shared strings…',false);await yield_();
+
+  // ── 6. Update sharedStrings ──
   if(ssk){
     let ssXml=ssOrigXml;
     if(newSsEntries.length){
       const appendXml=newSsEntries.map(s=>`<si><t xml:space="preserve">${xmlEsc(s)}</t></si>`).join('');
       ssXml=ssXml.replace('</sst>',()=>appendXml+'</sst>');
     }
-    // Update count attributes to reflect total
     const total=nextSsIdx;
-    ssXml=ssXml.replace(/(<sst\b[^>]*?\buniqueCount=")[^"]*(")/,`$1${total}$2`);
-    ssXml=ssXml.replace(/(<sst\b[^>]*?\bcount=")[^"]*(")/,`$1${total}$2`);
+    ssXml=ssXml.replace(/(<sst\b[^>]*?\buniqueCount=")[^"]*(")/,(_,a,b)=>a+total+b);
+    ssXml=ssXml.replace(/(<sst\b[^>]*?\bcount=")[^"]*(")/,(_,a,b)=>a+total+b);
     files[ssk]=enc.encode(ssXml);
   }
 
-  // ── 7. Pack as XLSX (ZIP) ──
+  showXlsxMsg('⏳ Packing XLSX file…',false);await yield_();
+
   return writeZIP(Object.entries(files).map(([name,data])=>({name,data})));
 }
 
