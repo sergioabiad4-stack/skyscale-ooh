@@ -125,9 +125,8 @@ tr.file-sep td{background:#f0f4f8 !important;font-size:10px;font-weight:700;colo
   <div class="card card-hidden" id="prevCard">
     <div class="prev-hd">
       <div>
-        <div class="card-title">Filled print plan</div>
+        <div class="card-title">Ready to download</div>
         <div class="stat" id="prevStat"></div>
-        <div class="chip-row" id="chipRow"></div>
       </div>
       <div class="btn-row">
         <button class="btn btn-xlsx" id="btnXlsx" style="display:none" onclick="downloadXLSX()">⬇ Download filled .xlsx</button>
@@ -135,10 +134,6 @@ tr.file-sep td{background:#f0f4f8 !important;font-size:10px;font-weight:700;colo
       </div>
     </div>
     <div id="xlsxErr" style="display:none;color:#dc2626;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:9px 14px;font-size:12px;margin-bottom:10px"></div>
-    <div class="alert alert-warn" id="missAlert"></div>
-    <div class="tbl-wrap">
-      <table class="cn"><thead><tr id="cnHead"></tr></thead><tbody id="cnBody"></tbody></table>
-    </div>
   </div>
   <div style="text-align:center;padding:24px;font-size:11px;color:#9ca3af">Skyscale Media · Condé Nast print plan filler</div>
 </div>
@@ -330,48 +325,9 @@ async function addFiles(files){
 function renderResult(){
   const valid=uploadedFiles.filter(f=>!f.error&&f.outputRows.length>0);
   if(!valid.length){document.getElementById('prevCard').classList.add('card-hidden');return;}
-
-  const globalMatched=CN_FIELDS.filter(field=>valid.some(f=>f.fieldToCol[field]>=0||(field==='market'&&f.market)));
-  const chipRow=document.getElementById('chipRow');chipRow.innerHTML='';
-  for(const field of CN_FIELDS){
-    const ok=valid.some(f=>f.fieldToCol[field]>=0||(field==='market'&&f.market));
-    const ch=document.createElement('span');ch.className='chip '+(ok?'chip-ok':'chip-miss');
-    ch.textContent=(ok?'✓ ':'✗ ')+CN_LABELS[field];chipRow.appendChild(ch);
-  }
-
-  const missing=CN_FIELDS.filter(field=>!valid.some(f=>f.fieldToCol[field]>=0||(field==='market'&&f.market)));
-  const wa=document.getElementById('missAlert');
-  if(missing.length){wa.textContent='No match for: '+missing.map(f=>CN_LABELS[f]).join(', ')+'. These will be blank.';wa.classList.add('show');}
-  else wa.classList.remove('show');
-
-  // Show/hide XLSX button
-  document.getElementById('btnXlsx').style.display=tplBuffer?'':'none';
-
-  // Table header
-  const head=document.getElementById('cnHead');head.innerHTML='';
-  for(const f of CN_FIELDS){const th=document.createElement('th');th.textContent=CN_LABELS[f];head.appendChild(th);}
-
-  // Table body
-  const body=document.getElementById('cnBody');body.innerHTML='';
-  for(const f of valid){
-    if(valid.length>1){const sep=document.createElement('tr');sep.className='file-sep';
-      const td=document.createElement('td');td.colSpan=CN_FIELDS.length;td.textContent='▸ '+f.name;sep.appendChild(td);body.appendChild(sep);}
-    for(const r of f.outputRows){
-      const tr=document.createElement('tr');
-      for(const field of CN_FIELDS){const td=document.createElement('td');const v=r[field];td.title=v||'';
-        if(!v)td.className='v-empty';
-        else{td.textContent=v;
-          if(field==='market')td.className='v-market';
-          else if(field==='media')td.className='v-media';
-          else if(field==='net_total')td.className='v-total';
-          else if(field==='net_cpm'||field==='kpis')td.className='v-num';}
-        tr.appendChild(td);}
-      body.appendChild(tr);
-    }
-  }
-
   const total=valid.reduce((s,f)=>s+f.outputRows.length,0);
-  document.getElementById('prevStat').textContent=`${total} rows · ${valid.length} file${valid.length>1?'s':''} · ${globalMatched.length}/10 CN fields detected`;
+  document.getElementById('prevStat').textContent=`${total} rows from ${valid.length} file${valid.length>1?'s':''} ready`;
+  document.getElementById('btnXlsx').style.display=tplBuffer?'':'none';
   document.getElementById('prevCard').classList.remove('card-hidden');
 }
 
