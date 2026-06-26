@@ -270,17 +270,23 @@ function processFileRows(rawRows){
   return{hdrIdx,datHeaders,datRows,fieldToCol};
 }
 function buildOutputRows(f){
-  const{datRows,fieldToCol,market}=f;let lastMkt='';
-  return datRows.reduce((acc,row)=>{
+  const{datRows,fieldToCol,market}=f;let lastMkt='',sparseRun=0;
+  const acc=[];
+  for(const row of datRows){
     const r={};
     for(const field of CN_FIELDS){const col=fieldToCol[field];r[field]=col>=0?(row[col]!=null?String(row[col]).trim():''):''}
     if(!r.market&&market)r.market=market;
     if(!r.market)r.market=lastMkt;else lastMkt=r.market;
     if(r.platform)r.platform=PLATFORM_MAP[r.platform.toLowerCase().trim()]||r.platform;
-    // Skip section-header rows (fewer than 2 non-market CN fields filled)
-    if(CN_FIELDS.filter(fld=>fld!=='market'&&r[fld]).length<2)return acc;
-    acc.push(r);return acc;
-  },[]);
+    const filled=CN_FIELDS.filter(fld=>fld!=='market'&&r[fld]).length;
+    // Accumulate sparse-row run; stop if 3+ consecutive sparse rows after real data
+    if(filled<3){sparseRun++;if(sparseRun>=3&&acc.length)break;continue;}
+    sparseRun=0;
+    // Skip rows with any very long cell value (rate card "Please Note" disclaimers)
+    if(CN_FIELDS.some(fld=>r[fld]&&r[fld].length>80))continue;
+    acc.push(r);
+  }
+  return acc;
 }
 
 // ── File list UI ──────────────────────────────────────────────────
