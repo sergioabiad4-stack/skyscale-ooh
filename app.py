@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os
+import io
 import uuid
 import copy
 import json
@@ -291,7 +292,9 @@ def get_map_image_bytes(location: str, city: str, zoom: int = 16) -> bytes | Non
             pass
         return None
 
-    # ── Free fallback: Nominatim geocode → staticmap.openstreetmap.de ──
+    # ── Free fallback: Nominatim geocode → stitch OSM tiles with Pillow ──
+    # Respect Nominatim's 1 req/sec rate limit
+    time.sleep(1.1)
     try:
         geo = requests.get(
             "https://nominatim.openstreetmap.org/search",
@@ -300,27 +303,53 @@ def get_map_image_bytes(location: str, city: str, zoom: int = 16) -> bytes | Non
             timeout=8,
         ).json()
         if not geo:
+            print(f"[MAP] Nominatim found nothing for {location!r}, {city!r}")
             return None
         lat, lng = float(geo[0]["lat"]), float(geo[0]["lon"])
-
-        resp = requests.get(
-            "https://staticmap.openstreetmap.de/staticmap.php",
-            params={
-                "center": f"{lat},{lng}",
-                "zoom": min(zoom, 15),
-                "size": "600x400",
-                "markers": f"{lat},{lng},red",
-            },
-            headers={"User-Agent": UA},
-            timeout=20,
-        )
-        ct = resp.headers.get("content-type", "")
-        print(f"[MAP] staticmap status={resp.status_code} ct={ct} loc={location!r}")
-        if resp.status_code == 200 and "image" in ct:
-            return resp.content
-        return None
+        print(f"[MAP] geocoded {location!r} → lat={lat:.4f} lng={lng:.4f}")
     except Exception as e:
-        print(f"[MAP] fetch failed for {location!r}: {e}")
+        print(f"[MAP] Nominatim failed for {location!r}: {e}")
+        return None
+
+    # Stitch a 3×3 grid of OSM tiles into one image
+    try:
+        from PIL import Image, ImageDraw
+
+        z = min(zoom, 15)
+        n = 2 ** z
+        lat_rad = math.radians(lat)
+        tx = int((lng + 180) / 360 * n)
+        ty = int((1 - math.log(math.tan(lat_rad) + 1 / math.cos(lat_rad)) / math.pi) / 2 * n)
+
+        TILE = 256
+        canvas = Image.new("RGB", (TILE * 3, TILE * 3), (220, 220, 215))
+        ok = 0
+        for row in range(3):
+            for col in range(3):
+                url = f"https://tile.openstreetmap.org/{z}/{tx - 1 + col}/{ty - 1 + row}.png"
+                try:
+                    r = requests.get(url, headers={"User-Agent": UA}, timeout=8)
+                    if r.status_code == 200 and "image" in r.headers.get("content-type", ""):
+                        tile = Image.open(io.BytesIO(r.content)).convert("RGB")
+                        canvas.paste(tile, (col * TILE, row * TILE))
+                        ok += 1
+                except Exception:
+                    pass
+
+        print(f"[MAP] stitched {ok}/9 tiles for {location!r}")
+
+        # Red pin at centre
+        draw = ImageDraw.Draw(canvas)
+        cx, cy = canvas.width // 2, canvas.height // 2
+        pr = 13
+        draw.ellipse([cx - pr, cy - pr, cx + pr, cy + pr],
+                     fill=(220, 30, 30), outline="white", width=3)
+
+        buf = io.BytesIO()
+        canvas.save(buf, format="PNG")
+        return buf.getvalue()
+    except Exception as e:
+        print(f"[MAP] tile stitch failed for {location!r}: {e}")
         return None
 
 
