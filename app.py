@@ -309,16 +309,18 @@ def get_map_image_bytes(location: str, city: str, zoom: int = 16) -> bytes | Non
                 "center": f"{lat},{lng}",
                 "zoom": min(zoom, 15),
                 "size": "600x400",
-                "markers": f"{lat},{lng},lightblue1",
+                "markers": f"{lat},{lng},red",
             },
             headers={"User-Agent": UA},
-            timeout=15,
+            timeout=20,
         )
         ct = resp.headers.get("content-type", "")
+        print(f"[MAP] staticmap status={resp.status_code} ct={ct} loc={location!r}")
         if resp.status_code == 200 and "image" in ct:
             return resp.content
         return None
-    except Exception:
+    except Exception as e:
+        print(f"[MAP] fetch failed for {location!r}: {e}")
         return None
 
 
@@ -541,8 +543,13 @@ def build_pptx_from_plan(job_id: str, pptx_path: Path, plan: list):
                             MAP_IMG_LEFT, MAP_IMG_TOP,
                             MAP_IMG_WIDTH, MAP_IMG_HEIGHT,
                         )
+                        print(f"[PPTX] map added to slide {idx}")
                     except Exception as pic_err:
                         print(f"[WARN] add_picture failed for slide {idx}: {pic_err}")
+                else:
+                    print(f"[WARN] map file missing on disk for slide {idx}: {map_path_str}")
+            else:
+                print(f"[PPTX] no map path for slide {idx} — skipping")
 
         update("building", "Saving output file…", 96)
         output_filename = f"OOH_Proposal_{job_id[:8]}.pptx"
@@ -644,9 +651,10 @@ def generate_plan_job(job_id: str, excel_path: Path):
                     "landmark_3":      "",
                 }
 
-            # Fetch Google Maps screenshot
+            # Fetch map screenshot
             map_address = market if is_mobile else location
             map_zoom    = 11 if is_mobile else 16
+            print(f"[MAP] fetching for site {idx} '{site_name}': address={map_address!r}, city={market!r}, zoom={map_zoom}")
             map_bytes   = get_map_image_bytes(map_address, market, zoom=map_zoom)
             has_map     = False
             if map_bytes:
@@ -655,6 +663,9 @@ def generate_plan_job(job_id: str, excel_path: Path):
                 with jobs_lock:
                     jobs[job_id]["map_paths"][idx] = str(map_file)
                 has_map = True
+                print(f"[MAP] saved {len(map_bytes)} bytes for site {idx} '{site_name}'")
+            else:
+                print(f"[MAP] no map returned for site {idx} '{site_name}'")
 
             plan.append({
                 "site_name":       site_name,
