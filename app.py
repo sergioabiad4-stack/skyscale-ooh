@@ -1000,6 +1000,185 @@ def generate():
 
 
 # ---------------------------------------------------------------------------
+# CN Print Plan Filler
+# ---------------------------------------------------------------------------
+
+_CN_FIELDS = ['market','media','elements','format','platform','unit_type','kpis','buy_type','net_cpm','net_total']
+_CN_COL = {'market':1,'media':2,'elements':3,'format':4,'platform':5,
+            'unit_type':6,'kpis':7,'buy_type':8,'net_cpm':9,'net_total':10}
+_CN_KWDS = {
+    'market':    ['market','country','region','geo','territory'],
+    'media':     ['site','publisher','media','outlet','supplied by','supplier','publication'],
+    'elements':  ['package','description','placement','elements','product','brief'],
+    'format':    ['placement name','format','ad format','format/specs','specs'],
+    'platform':  ['platform','device','channel'],
+    'unit_type': ['unit type','kpi type','metric'],
+    'kpis':      ['kpi guarantee','units','quantity','impressions','views'],
+    'buy_type':  ['cost method','buy type','pricing method','revenue type'],
+    'net_cpm':   ['net cpm','net rate','cpm','rate'],
+    'net_total': ['total usd','total net','net total','cost','total cost','investment','budget'],
+}
+_PLATFORM_ABBR = {'instagram':'IG','facebook':'FB','twitter':'X','x (twitter)':'X',
+                  'linkedin':'LI','youtube':'YT','tiktok':'TT','snapchat':'SC'}
+
+
+def _cn_match(header):
+    h = str(header).lower().strip()
+    if not h or h in ('nan','none'):
+        return None
+    for field, kws in _CN_KWDS.items():
+        if h in kws:
+            return field
+    for field, kws in _CN_KWDS.items():
+        for kw in kws:
+            if kw in h or h in kw:
+                return field
+    return None
+
+
+def _cn_find_header(rows):
+    targets = {'site','placement','platform','cost','units','package','format','rate','cpm','media','kpi'}
+    for i, row in enumerate(rows[:25]):
+        vals = {str(v).lower().strip() for v in row if v is not None and str(v).strip()}
+        if len(vals & targets) >= 2:
+            return i
+    return 0
+
+
+def _cn_extract(file_bytes, market_label):
+    import openpyxl as opx
+    wb = opx.load_workbook(io.BytesIO(file_bytes), data_only=True)
+    ws = wb.active
+    raw = [[c.value for c in row] for row in ws.iter_rows()]
+    if not raw:
+        return []
+
+    hdr = _cn_find_header(raw)
+    headers = raw[hdr]
+    data = raw[hdr + 1:]
+
+    field_col = {}
+    used = set()
+    for field in _CN_FIELDS:
+        for ci, h in enumerate(headers):
+            if ci in used:
+                continue
+            if _cn_match(h) == field:
+                field_col[field] = ci
+                used.add(ci)
+                break
+
+    results, sparse_run, last_mkt = [], 0, ''
+    for row in data:
+        r = {}
+        for field in _CN_FIELDS:
+            ci = field_col.get(field)
+            v = row[ci] if ci is not None and ci < len(row) else None
+            s = str(v).strip() if v is not None else ''
+            r[field] = '' if s in ('nan','None','N/A','n/a') else s
+
+        r['market'] = r['market'] or market_label or last_mkt
+        if r['market']:
+            last_mkt = r['market']
+        p = r.get('platform','')
+        r['platform'] = _PLATFORM_ABBR.get(p.lower(), p)
+
+        filled = sum(1 for f in _CN_FIELDS if f != 'market' and r[f])
+        if filled < 3:
+            sparse_run += 1
+            if sparse_run >= 3 and results:
+                break
+            continue
+        sparse_run = 0
+        if any(len(r[f]) > 80 for f in _CN_FIELDS):
+            continue
+        results.append(r)
+
+    return results
+
+
+@app.route('/print-plan')
+def print_plan_page():
+    return render_template('print_plan.html')
+
+
+@app.route('/fill-cn-plan', methods=['POST'])
+def fill_cn_plan():
+    import openpyxl as opx
+    from openpyxl.cell.cell import MergedCell
+
+    tpl = request.files.get('template')
+    rcs = request.files.getlist('rate_cards')
+    markets = request.form.getlist('markets')
+
+    if not tpl:
+        return 'Template file required', 400
+    if not rcs or not any(f.filename for f in rcs):
+        return 'At least one rate card required', 400
+
+    try:
+        wb = opx.load_workbook(io.BytesIO(tpl.read()))
+        ws = wb.active
+
+        # Clear values from row 6 onwards (preserve styles)
+        for row in ws.iter_rows(min_row=6):
+            for cell in row:
+                if not isinstance(cell, MergedCell):
+                    cell.value = None
+
+        # Extract rows from each rate card
+        all_rows = []
+        for i, rc in enumerate(rcs):
+            mkt = markets[i] if i < len(markets) else ''
+            try:
+                all_rows.extend(_cn_extract(rc.read(), mkt))
+            except Exception as e:
+                print(f'Rate card {rc.filename}: {e}')
+
+        # Write into template starting at row 6
+        last_mkt = ''
+        for i, rd in enumerate(all_rows):
+            r = 6 + i
+            mkt = rd.get('market','')
+            for field in _CN_FIELDS:
+                col = _CN_COL[field]
+                if field == 'market':
+                    if mkt and mkt != last_mkt:
+                        c = ws.cell(row=r, column=col)
+                        if not isinstance(c, MergedCell):
+                            c.value = mkt
+                    continue
+                val = rd.get(field,'')
+                if not val:
+                    continue
+                c = ws.cell(row=r, column=col)
+                if isinstance(c, MergedCell):
+                    continue
+                if field in ('net_cpm','net_total','kpis'):
+                    try:
+                        clean = re.sub(r'[^0-9.\-]','',val)
+                        c.value = float(clean) if '.' in clean else int(clean)
+                    except Exception:
+                        c.value = val
+                else:
+                    c.value = val
+            if mkt:
+                last_mkt = mkt
+
+        out = io.BytesIO()
+        wb.save(out)
+        out.seek(0)
+        base = tpl.filename.rsplit('.',1)[0] if tpl.filename else 'CN_Print_Plan'
+        return send_file(out, as_attachment=True,
+                         download_name=f'{base}_filled.xlsx',
+                         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+    except Exception as e:
+        print(traceback.format_exc())
+        return str(e), 500
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
