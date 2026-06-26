@@ -1012,7 +1012,7 @@ _CN_KWDS = {
     'elements':  ['package','description','placement','elements','product','brief'],
     'format':    ['placement name','format','ad format','format/specs','specs'],
     'platform':  ['platform','device','channel'],
-    'unit_type': ['unit type','kpi type','metric'],
+    'unit_type': ['unit type','kpi type','metric','kpi'],
     'kpis':      ['kpi guarantee','units','quantity','impressions','views'],
     'buy_type':  ['cost method','buy type','pricing method','revenue type'],
     'net_cpm':   ['net cpm','net rate','cpm','rate'],
@@ -1020,6 +1020,28 @@ _CN_KWDS = {
 }
 _PLATFORM_ABBR = {'instagram':'IG','facebook':'FB','twitter':'X','x (twitter)':'X',
                   'linkedin':'LI','youtube':'YT','tiktok':'TT','snapchat':'SC'}
+
+# Hardcoded column indices (0-indexed) for known CN rate card formats — from skill specification
+_MARKET_MAPS = {
+    'uk': {           # CN Traveller UK rate card
+        'elements':  1,    # Col B(2): PLACEMENT
+        'format':    2,    # Col C(3): FORMAT
+        'unit_type': 7,    # Col H(8): KPI type
+        'kpis':      12,   # Col M(13): KPI GUARANTEE
+        'net_total': 17,   # Col R(18): TOTAL USD
+    },
+    'usa': {          # CN Traveller US rate card
+        'media':     1,    # Col B(2): Site
+        'elements':  4,    # Col E(5): Package
+        'format':    5,    # Col F(6): Placement Name
+        'platform':  6,    # Col G(7): Platform
+        'unit_type': 8,    # Col I(9): Unit type
+        'kpis':      9,    # Col J(10): Units
+        'buy_type':  10,   # Col K(11): Cost method
+        'net_cpm':   11,   # Col L(12): Rate
+        'net_total': 12,   # Col M(13): Cost
+    },
+}
 
 
 def _cn_match(header):
@@ -1057,16 +1079,28 @@ def _cn_extract(file_bytes, market_label):
     headers = raw[hdr]
     data = raw[hdr + 1:]
 
+    # Normalise market key for lookup
+    mkt_key = market_label.lower().strip()
+    if mkt_key in ('us', 'u.s.', 'u.s.a.', 'united states'):
+        mkt_key = 'usa'
+    hardcoded = _MARKET_MAPS.get(mkt_key, {})
+
+    # Hardcoded columns first (reliable), then auto-detect the rest from headers
     field_col = {}
-    used = set()
+    used = set(hardcoded.values())
     for field in _CN_FIELDS:
-        for ci, h in enumerate(headers):
-            if ci in used:
-                continue
-            if _cn_match(h) == field:
-                field_col[field] = ci
-                used.add(ci)
-                break
+        if field == 'market':
+            continue
+        if field in hardcoded:
+            field_col[field] = hardcoded[field]
+        else:
+            for ci, h in enumerate(headers):
+                if ci in used:
+                    continue
+                if _cn_match(h) == field:
+                    field_col[field] = ci
+                    used.add(ci)
+                    break
 
     results, sparse_run, last_mkt = [], 0, ''
     for row in data:
